@@ -19,9 +19,14 @@ class PhaseField {
     static const double tt = 0.585, vv = 1.0;
 
     static const int nc = 3; //number of components
-    fftw_complex **eta, **keta;
     
+    fftw_complex **eta, **keta;
     fftw_plan *plan_forward, *plan_backward;
+
+    fftw_complex **buffer, **buffer_k;
+    fftw_plan *buffer_plan_f, *buffer_plan_b;
+
+
 
     ptrdiff_t local_nx, local_nx_start, alloc_local;
 
@@ -36,8 +41,9 @@ class PhaseField {
 
 public:
     void initialize_eta();
-    void take_fft();
-    void take_ifft();
+    void take_fft(fftw_plan *plan);
+    void normalize_field(fftw_complex **field);
+
     fftw_complex* get_eta(int num);
     fftw_complex* get_keta(int num);
 
@@ -47,5 +53,6 @@ public:
 
     PhaseField(int argc, char **argv);
     ~PhaseField();
-
+    
+    void test();
 };
