@@ -11,6 +11,8 @@ public:
     MechanicalEquilibrium(PhaseField* phase_field);
 
     void test();
+
+    void steepest_descent_fixed_dz();
 };
 
 #endif
