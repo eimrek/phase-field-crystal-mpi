@@ -2,4 +2,6 @@ backup/*
 bin/*
 obj/*
 *.swp
+testfile
+output/*
 

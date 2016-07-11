@@ -7,7 +7,7 @@ CXX = mpic++
 # -Wall		shows all warnings when compiling
 # -std=c++11	enables the C++11 standard
 # -O3		optimization
-CXXFLAGS = -Wall -std=c++11
+CXXFLAGS = -Wall -std=c++11 -O3
 
 # Linker parameters
 LFLAGS = -L/opt/fftw-3.3.4/lib -lfftw3_mpi -lfftw3 -lm
@@ -38,7 +38,7 @@ obj/%.o: src/%.cpp
 	$(CXX) $(APP_CXXFLAGS) -c $< -o $@
 
 run:
-	mpirun $(APP)
+	mpirun -n 1 $(APP)
 
 #################
 # OTHER TARGETS #

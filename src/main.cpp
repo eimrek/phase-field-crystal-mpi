@@ -1,6 +1,7 @@
 
 
 #include <iostream>
+#include <cstdlib>
 
 #include <mpi.h>
 
@@ -17,21 +18,25 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &mpi_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
     
+    cout << "Process started: " << mpi_rank << "/" << mpi_size << endl;
     {
-        
-        PhaseField phase_field(mpi_size, mpi_rank);
-        phase_field.initialize_eta();
-        phase_field.take_fft(phase_field.plan_forward);
-        phase_field.calculate_energy();
-        phase_field.overdamped_time_step();
-        phase_field.calculate_energy();
+        MechanicalEquilibrium pfc(mpi_size, mpi_rank);
+        pfc.initialize_eta();
 
-        phase_field.output_field(phase_field.eta[0]);
+        pfc.write_eta_to_file();
+        /*
+        pfc.take_fft(pfc.eta_plan_f);
+        for (int it = 0; it < 80; it++) {
+            pfc.overdamped_time_step();
+        }
+        double en = pfc.calculate_energy(pfc.eta, pfc.eta_k);
+        printf("Energy before mech eq: %.16e\n", en);
+        pfc.accelerated_steepest_descent_adaptive_dz();
+        */
 
-        MechanicalEquilibrium mech_eq(&phase_field);
-        mech_eq.test();
     }
 
     MPI_Finalize();
+    return EXIT_SUCCESS;
 }
 

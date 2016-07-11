@@ -16,7 +16,7 @@ using namespace std;
 #define IMAG 1
 
 class PhaseField {
-    
+protected: 
     static const int nx, ny;
     static const double dx, dy;
 
@@ -30,7 +30,7 @@ class PhaseField {
     static const int nc; //number of components
     
 
-    ptrdiff_t local_nx, local_nx_start;
+    ptrdiff_t alloc_local, local_nx, local_nx_start;
 
     int mpi_size, mpi_rank;
 
@@ -42,14 +42,20 @@ class PhaseField {
 
     double dot_prod(const double* v1, const double* v2, int len);
 
-
+    void memcopy_eta(complex<double> **eta_to, complex<double> **eta_from);
+    
 public:
 
     complex<double> **eta, **eta_k;
-    fftw_plan *plan_forward, *plan_backward;
+    fftw_plan *eta_plan_f, *eta_plan_b;
+
+    complex<double> **eta_tmp, **eta_tmp_k;
+    fftw_plan *eta_tmp_plan_f, *eta_tmp_plan_b;
 
     complex<double> **buffer, **buffer_k;
     fftw_plan *buffer_plan_f, *buffer_plan_b;
+
+    double **grad_theta;
 
 
     void initialize_eta();
@@ -61,14 +67,17 @@ public:
 
     void output_field(complex<double>* field);
 
-    double calculate_energy();
-    void calculate_grad_theta();
-    void calculate_nonlinear_part(int i, int j, complex<double> *compoenents);
+    double calculate_energy(complex<double> **eta_, complex<double> **eta_k_);
+    void calculate_grad_theta(complex<double> **eta_, complex<double> **eta_k_);
+    void calculate_nonlinear_part(int i, int j, complex<double> *compoenents,
+            complex<double> **eta_);
     void overdamped_time_step();
 
     PhaseField(int mpi_size, int mpi_rank);
     ~PhaseField();
     
+    void write_eta_to_file();
+
     void test();
 };
 

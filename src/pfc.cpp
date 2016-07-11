@@ -12,8 +12,8 @@
 //
 // initialization could also be done in header, if const->constexpr 
 
-const int PhaseField::nx = 8;
-const int PhaseField::ny = 8;
+const int PhaseField::nx = 384;
+const int PhaseField::ny = 384;
 
 const double PhaseField::dx = 2.0;
 const double PhaseField::dy = 2.0;
@@ -44,11 +44,16 @@ PhaseField::PhaseField(int mpi_size, int mpi_rank)
     calculate_k_values(k_x_values, nx, dx);
     calculate_k_values(k_y_values, ny, dy);
     
-    // Allocate etas and plans FFT plans and same for buffer values
+    // Allocate etas and FFT plans and same for buffer values
     eta = (complex<double>**) malloc(sizeof(complex<double>*)*nc);
     eta_k = (complex<double>**) malloc(sizeof(complex<double>*)*nc);
-    plan_forward = (fftw_plan*) malloc(sizeof(fftw_plan)*nc);
-    plan_backward = (fftw_plan*) malloc(sizeof(fftw_plan)*nc);
+    eta_plan_f = (fftw_plan*) malloc(sizeof(fftw_plan)*nc);
+    eta_plan_b = (fftw_plan*) malloc(sizeof(fftw_plan)*nc);
+
+    eta_tmp = (complex<double>**) malloc(sizeof(complex<double>*)*nc);
+    eta_tmp_k = (complex<double>**) malloc(sizeof(complex<double>*)*nc);
+    eta_tmp_plan_f = (fftw_plan*) malloc(sizeof(fftw_plan)*nc);
+    eta_tmp_plan_b = (fftw_plan*) malloc(sizeof(fftw_plan)*nc);
 
     buffer = (complex<double>**) malloc(sizeof(complex<double>*)*nc);
     buffer_k = (complex<double>**) malloc(sizeof(complex<double>*)*nc);
@@ -56,13 +61,16 @@ PhaseField::PhaseField(int mpi_size, int mpi_rank)
     buffer_plan_b = (fftw_plan*) malloc(sizeof(fftw_plan)*nc);
 
 
-    ptrdiff_t alloc_local = fftw_mpi_local_size_2d(nx, ny, MPI_COMM_WORLD,
+
+    alloc_local = fftw_mpi_local_size_2d(nx, ny, MPI_COMM_WORLD,
             &local_nx, &local_nx_start);
 
-    // Allocate and calculate G_j values
+    // Allocate memory for G_j values and theta gradient
     g_values = (double**) malloc(sizeof(double*)*nc);
+    grad_theta = (double**) malloc(sizeof(double*)*nc);
     for (int i = 0; i < nc; i++) {
         g_values[i] = (double*) malloc(sizeof(double)*local_nx*ny);
+        grad_theta[i] = (double*) malloc(sizeof(double)*local_nx*ny);
     }
     calculate_g_values(g_values);
 
@@ -70,25 +78,36 @@ PhaseField::PhaseField(int mpi_size, int mpi_rank)
     for (int i = 0; i < nc; i++) {
         eta[i] = reinterpret_cast<complex<double>*>(fftw_alloc_complex(alloc_local));
         eta_k[i] = reinterpret_cast<complex<double>*>(fftw_alloc_complex(alloc_local));
-        plan_forward[i] = fftw_mpi_plan_dft_2d(nx, ny,
+        eta_plan_f[i] = fftw_mpi_plan_dft_2d(nx, ny,
                 reinterpret_cast<fftw_complex*>(eta[i]),
                 reinterpret_cast<fftw_complex*>(eta_k[i]),
-                MPI_COMM_WORLD, FFTW_FORWARD, FFTW_ESTIMATE);
-        plan_backward[i] = fftw_mpi_plan_dft_2d(nx, ny,
+                MPI_COMM_WORLD, FFTW_FORWARD, FFTW_MEASURE);
+        eta_plan_b[i] = fftw_mpi_plan_dft_2d(nx, ny,
                 reinterpret_cast<fftw_complex*>(eta_k[i]),
                 reinterpret_cast<fftw_complex*>(eta[i]),
-                MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_ESTIMATE);
+                MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_MEASURE);
+
+        eta_tmp[i] = reinterpret_cast<complex<double>*>(fftw_alloc_complex(alloc_local));
+        eta_tmp_k[i] = reinterpret_cast<complex<double>*>(fftw_alloc_complex(alloc_local));
+        eta_tmp_plan_f[i] = fftw_mpi_plan_dft_2d(nx, ny,
+                reinterpret_cast<fftw_complex*>(eta_tmp[i]),
+                reinterpret_cast<fftw_complex*>(eta_tmp_k[i]),
+                MPI_COMM_WORLD, FFTW_FORWARD, FFTW_MEASURE);
+        eta_tmp_plan_b[i] = fftw_mpi_plan_dft_2d(nx, ny,
+                reinterpret_cast<fftw_complex*>(eta_tmp_k[i]),
+                reinterpret_cast<fftw_complex*>(eta_tmp[i]),
+                MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_MEASURE);
 
         buffer[i] = reinterpret_cast<complex<double>*>(fftw_alloc_complex(alloc_local));
         buffer_k[i] = reinterpret_cast<complex<double>*>(fftw_alloc_complex(alloc_local));
         buffer_plan_f[i] = fftw_mpi_plan_dft_2d(nx, ny,
                 reinterpret_cast<fftw_complex*>(buffer[i]),
                 reinterpret_cast<fftw_complex*>(buffer_k[i]),
-                MPI_COMM_WORLD, FFTW_FORWARD, FFTW_ESTIMATE);
+                MPI_COMM_WORLD, FFTW_FORWARD, FFTW_MEASURE);
         buffer_plan_b[i] = fftw_mpi_plan_dft_2d(nx, ny,
                 reinterpret_cast<fftw_complex*>(buffer_k[i]),
                 reinterpret_cast<fftw_complex*>(buffer[i]),
-                MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_ESTIMATE);
+                MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_MEASURE);
     }
 
 }
@@ -96,7 +115,7 @@ PhaseField::PhaseField(int mpi_size, int mpi_rank)
 PhaseField::~PhaseField() {
     for (int i = 0; i < nc; i++) {
         fftw_free(eta[i]); fftw_free(eta_k[i]);
-        fftw_destroy_plan(plan_forward[i]); fftw_destroy_plan(plan_backward[i]); 
+        fftw_destroy_plan(eta_plan_f[i]); fftw_destroy_plan(eta_plan_b[i]); 
 
         fftw_free(buffer[i]); fftw_free(buffer_k[i]);
         fftw_destroy_plan(buffer_plan_f[i]); fftw_destroy_plan(buffer_plan_b[i]); 
@@ -104,7 +123,7 @@ PhaseField::~PhaseField() {
         free(g_values[i]);
     }
     free(eta); free(eta_k);
-    free(plan_forward); free(plan_backward);
+    free(eta_plan_f); free(eta_plan_b);
 
     free(buffer); free(buffer_k);
     free(buffer_plan_f); free(buffer_plan_b);
@@ -231,15 +250,21 @@ void PhaseField::calculate_g_values(double **g_values) {
     }
 }
 
+
+void PhaseField::memcopy_eta(complex<double> **eta_to, complex<double> **eta_from) {
+    for (int c = 0; c < nc; c++) {
+        memcpy(eta_to[c], eta_from[c], sizeof(complex<double>)*local_nx*ny);
+    }
+}
+
+
 /*! Method to calculate energy.
  *
  *  NB: This method assumes that eta_k is set beforehand.
  */
-double PhaseField::calculate_energy() {
+double PhaseField::calculate_energy(complex<double> **eta_, complex<double> **eta_k_) {
     // will use the member variable buffer_k to hold (G_j eta_j)_k
-    for (int c = 0; c < nc; c++) {
-        memcpy(buffer_k[c], eta_k[c], sizeof(complex<double>)*local_nx*ny);
-    }
+    memcopy_eta(buffer_k, eta_k_);
 
     //  Multiply eta_k by G_j in k space
     for (int c = 0; c < nc; c++) {
@@ -260,9 +285,9 @@ double PhaseField::calculate_energy() {
     double local_energy = 0.0;
     for (int i = 0; i < local_nx; i++) {
         for (int j = 0; j < ny; j++) {
-            complex<double> eta0 = eta[0][i*ny+j]; complex<double> buf0 = buffer[0][i*ny+j];
-            complex<double> eta1 = eta[1][i*ny+j]; complex<double> buf1 = buffer[1][i*ny+j];
-            complex<double> eta2 = eta[2][i*ny+j]; complex<double> buf2 = buffer[2][i*ny+j];
+            complex<double> eta0=eta_[0][i*ny+j]; complex<double> buf0=buffer[0][i*ny+j];
+            complex<double> eta1=eta_[1][i*ny+j]; complex<double> buf1=buffer[1][i*ny+j];
+            complex<double> eta2=eta_[2][i*ny+j]; complex<double> buf2=buffer[2][i*ny+j];
             double aa = 2*(abs(eta0)*abs(eta0) + abs(eta1)*abs(eta1) + abs(eta2)*abs(eta2));
 
             local_energy += aa*(bl-bx)/2.0 + (3.0/4.0)*vv*aa*aa
@@ -278,10 +303,11 @@ double PhaseField::calculate_energy() {
     double energy = 0.0;
     
     MPI_Allreduce(&local_energy, &energy, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-    
+    /*
     if (mpi_rank == 0) {
         printf("Energy: %.16e\n", energy);
     }
+    */
     return energy;
 }
 
@@ -290,10 +316,11 @@ double PhaseField::calculate_energy() {
  *  The components will be saved to components (memory must be allocated before)
  *  and they correspond to real space indices (coordinates) of i, j
  */
-void PhaseField::calculate_nonlinear_part(int i, int j, complex<double> *components) {
-    complex<double> eta0 = eta[0][i*ny+j];
-    complex<double> eta1 = eta[1][i*ny+j];
-    complex<double> eta2 = eta[2][i*ny+j];
+void PhaseField::calculate_nonlinear_part(int i, int j, complex<double> *components,
+        complex<double> **eta_) {
+    complex<double> eta0 = eta_[0][i*ny+j];
+    complex<double> eta1 = eta_[1][i*ny+j];
+    complex<double> eta2 = eta_[2][i*ny+j];
     double aa = 2*(abs(eta0)*abs(eta0) + abs(eta1)*abs(eta1) + abs(eta2)*abs(eta2));
     components[0] = 3*vv*(aa-abs(eta0)*abs(eta0))*eta0 - 2*tt*conj(eta1)*conj(eta2);
     components[1] = 3*vv*(aa-abs(eta1)*abs(eta1))*eta1 - 2*tt*conj(eta0)*conj(eta2);
@@ -305,9 +332,8 @@ void PhaseField::calculate_nonlinear_part(int i, int j, complex<double> *compone
  */
 void PhaseField::overdamped_time_step() {
     // Will use buffer to hold intermediate results
-    for (int c = 0; c < nc; c++) {
-        memcpy(buffer[c], eta[c], sizeof(complex<double>)*local_nx*ny);
-    }
+    memcopy_eta(buffer, eta);
+
     // allocate memory for the nonlinear part
     complex<double> *nonlinear_part = (complex<double>*) malloc(sizeof(complex<double>)*nc);
 
@@ -315,7 +341,7 @@ void PhaseField::overdamped_time_step() {
     // to get the numerator in the OD time stepping scheme (in real space)
     for (int i = 0; i < local_nx; i++) {
         for (int j = 0; j < ny; j++) {
-            calculate_nonlinear_part(i, j, nonlinear_part);
+            calculate_nonlinear_part(i, j, nonlinear_part, eta);
             for (int c = 0; c < nc; c++) {
                 buffer[c][i*ny + j] -= dt*nonlinear_part[c];
             }
@@ -337,7 +363,7 @@ void PhaseField::overdamped_time_step() {
     }
 
     // Take eta back to real space
-    take_fft(plan_backward);
+    take_fft(eta_plan_b);
     normalize_field(eta);
 
 }
@@ -352,13 +378,12 @@ double PhaseField::dot_prod(const double* v1, const double* v2, const int len) {
 
 /*! Method, which calculates the gradient of thetas
  *
- *  The resulting gradient will be stored in "buffer"
+ *  The resulting gradient will be stored in "grad_theta"
+ *  NB: required eta_k to be set
  */
-void PhaseField::calculate_grad_theta() {
+void PhaseField::calculate_grad_theta(complex<double> **eta_, complex<double> **eta_k_) {
     // will use the member variable buffer_k to hold (G_j^2 eta_j)_k
-    for (int c = 0; c < nc; c++) {
-        memcpy(buffer_k[c], eta_k[c], sizeof(complex<double>)*local_nx*ny);
-    }
+    memcopy_eta(buffer_k, eta_k_);
 
     //  Multiply eta_k by G_j^2 in k space
     for (int c = 0; c < nc; c++) {
@@ -372,7 +397,6 @@ void PhaseField::calculate_grad_theta() {
     // Go to real space for (G_j^2 eta_j)
     take_fft(buffer_plan_b);
     normalize_field(buffer);
-    
 
     // allocate memory for the nonlinear part and a temporary result
     complex<double> *nonlinear_part = (complex<double>*) malloc(sizeof(complex<double>)*nc);
@@ -380,31 +404,75 @@ void PhaseField::calculate_grad_theta() {
 
     for (int i = 0; i < local_nx; i++) {
         for (int j = 0; j < ny; j++) {
-           calculate_nonlinear_part(i, j, nonlinear_part);
+           calculate_nonlinear_part(i, j, nonlinear_part, eta_);
            for (int c = 0; c < nc; c++) {
-                complex<double> var_f_eta = (bl-bx)*eta[c][i*ny+j] + bx*buffer[c][i*ny+j]
+                complex<double> var_f_eta = (bl-bx)*eta_[c][i*ny+j] + bx*buffer[c][i*ny+j]
                                             + nonlinear_part[c];
-                //if (c == 0) printf("%.3e\n", var_f_eta);
-                im[c] = imag(conj(eta[c][i*ny+j])*var_f_eta);
-                //if (c == 0) printf("%.3e %.3e %.3e\n", im[c], var_f_eta, eta[c][i*ny+j]);
+                im[c] = imag(conj(eta_[c][i*ny+j])*var_f_eta);
            }
            for (int c = 0; c < nc; c++) {
-                double dtheta = dot_prod(q_vec[c], q_vec[0], nc)*im[0]
-                               + dot_prod(q_vec[c], q_vec[1], nc)*im[1]
-                               + dot_prod(q_vec[c], q_vec[2], nc)*im[2];
-                buffer[c][i*ny+j] = dtheta;
+                double dtheta = dot_prod(q_vec[c], q_vec[0], 2)*im[0]
+                               + dot_prod(q_vec[c], q_vec[1], 2)*im[1]
+                               + dot_prod(q_vec[c], q_vec[2], 2)*im[2];
+                grad_theta[c][i*ny+j] = dtheta;
            }
         }
     }
-    
+
     free(nonlinear_part);
     free(im);
 }
 
+
+void PhaseField::write_eta_to_file() {
+    const int BUFSIZE = 10;
+    int data[BUFSIZE];
+
+    for (int i = 0; i < BUFSIZE; i++) {
+        data[i] = mpi_rank * BUFSIZE+ i;
+    }
+    
+    
+    MPI_File mpi_file;
+    int rcode = MPI_File_open(MPI_COMM_WORLD, "testfile", MPI_MODE_CREATE | MPI_MODE_RDWR,
+            MPI_INFO_NULL, &mpi_file);
+
+    if (rcode != MPI_SUCCESS) {
+        cerr << "Error, couldn't open file" << endl;
+    }
+
+    rcode = MPI_File_set_view(mpi_file, mpi_rank*BUFSIZE*sizeof(int),
+                                MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
+    
+    if(rcode != MPI_SUCCESS){
+        cerr << "Problem setting process view" << endl;
+    }
+    rcode = MPI_File_write(mpi_file, &data, BUFSIZE, MPI_INT, MPI_STATUS_IGNORE);
+    if(rcode != MPI_SUCCESS){
+        cerr << "Problem writting file" << endl;
+    }
+
+    MPI_File_close(&mpi_file);
+
+    rcode = MPI_File_open(MPI_COMM_WORLD, "testfile", MPI_MODE_CREATE | MPI_MODE_RDWR,
+            MPI_INFO_NULL, &mpi_file);
+
+    rcode = MPI_File_set_view(mpi_file, mpi_rank*BUFSIZE*sizeof(int), MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
+    int read_data[BUFSIZE];
+    rcode = MPI_File_read(mpi_file, read_data, BUFSIZE, MPI_INT, MPI_STATUS_IGNORE);
+
+    for (int i = 0; i < BUFSIZE; i++) {
+        cout << mpi_rank << ": " << read_data[i] << endl;
+    }
+
+    MPI_File_close(&mpi_file);
+}
+
+
 void PhaseField::test() {
     //output_field(eta[0]);
 
-    //take_fft(plan_forward);
+    //take_fft(eta_plan_f);
     //calculate_energy();
     //overdamped_time_step();
     //calculate_energy();
