@@ -77,6 +77,7 @@ public:
     ~PhaseField();
     
     void write_eta_to_file();
+    void read_eta_from_file();
 
     void test();
 };

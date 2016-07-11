@@ -1,6 +1,8 @@
 
 #include <iostream>
-#include <stdlib.h>
+#include <cstdlib>
+#include <string>
+
 
 #include <mpi.h>
 #include <fftw3-mpi.h>
@@ -12,8 +14,8 @@
 //
 // initialization could also be done in header, if const->constexpr 
 
-const int PhaseField::nx = 384;
-const int PhaseField::ny = 384;
+const int PhaseField::nx = 4;
+const int PhaseField::ny = 4;
 
 const double PhaseField::dx = 2.0;
 const double PhaseField::dy = 2.0;
@@ -423,48 +425,71 @@ void PhaseField::calculate_grad_theta(complex<double> **eta_, complex<double> **
     free(im);
 }
 
-
+/*! Method, that writes current eta to a binary file
+ *
+ *  The data is structured as follows:
+ *  8 byte doubles, alternating real and imaginary parts,
+ *  if eta[c][i*ny+j], then fastest moving index is j, then i and finally c
+ */
 void PhaseField::write_eta_to_file() {
-    const int BUFSIZE = 10;
-    int data[BUFSIZE];
 
-    for (int i = 0; i < BUFSIZE; i++) {
-        data[i] = mpi_rank * BUFSIZE+ i;
-    }
-    
-    
+    char filename[] = "./testfile";
+
+    // delete old file
+    if (mpi_rank == 0) MPI_File_delete(filename, MPI_INFO_NULL);
+
     MPI_File mpi_file;
-    int rcode = MPI_File_open(MPI_COMM_WORLD, "testfile", MPI_MODE_CREATE | MPI_MODE_RDWR,
-            MPI_INFO_NULL, &mpi_file);
+    int rcode = MPI_File_open(MPI_COMM_WORLD, filename,
+            MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
 
-    if (rcode != MPI_SUCCESS) {
-        cerr << "Error, couldn't open file" << endl;
-    }
-
-    rcode = MPI_File_set_view(mpi_file, mpi_rank*BUFSIZE*sizeof(int),
-                                MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
+    if (rcode != MPI_SUCCESS)
+        cerr << "Error: couldn't open file" << endl;
+    for (int c = 0; c < nc; c++) {
+        MPI_Offset offset = mpi_rank*local_nx*ny*sizeof(double)*2 + c*nx*ny*sizeof(double)*2;
+        rcode = MPI_File_set_view(mpi_file, offset,
+                                    MPI_DOUBLE, MPI_DOUBLE, "native", MPI_INFO_NULL);
     
-    if(rcode != MPI_SUCCESS){
-        cerr << "Problem setting process view" << endl;
-    }
-    rcode = MPI_File_write(mpi_file, &data, BUFSIZE, MPI_INT, MPI_STATUS_IGNORE);
-    if(rcode != MPI_SUCCESS){
-        cerr << "Problem writting file" << endl;
+        if(rcode != MPI_SUCCESS)
+            cerr << "Error: couldn't set file process view" << endl;
+    
+        rcode = MPI_File_write(mpi_file, eta[c], local_nx*ny*2,
+                    MPI_DOUBLE, MPI_STATUS_IGNORE);
+
+        if(rcode != MPI_SUCCESS)
+            cerr << "Error: couldn't write file" << endl;
     }
 
     MPI_File_close(&mpi_file);
+}
 
-    rcode = MPI_File_open(MPI_COMM_WORLD, "testfile", MPI_MODE_CREATE | MPI_MODE_RDWR,
+/*! Reads eta from a binary file written by write_eta_to_file
+ *
+ */
+void PhaseField::read_eta_from_file() {
+
+    char filename[] = "./testfile";
+
+    MPI_File mpi_file;
+    int rcode = MPI_File_open(MPI_COMM_WORLD, "testfile", MPI_MODE_RDWR,
             MPI_INFO_NULL, &mpi_file);
 
-    rcode = MPI_File_set_view(mpi_file, mpi_rank*BUFSIZE*sizeof(int), MPI_INT, MPI_INT, "native", MPI_INFO_NULL);
-    int read_data[BUFSIZE];
-    rcode = MPI_File_read(mpi_file, read_data, BUFSIZE, MPI_INT, MPI_STATUS_IGNORE);
+    if (rcode != MPI_SUCCESS)
+        cerr << "Error: couldn't open file" << endl;
 
-    for (int i = 0; i < BUFSIZE; i++) {
-        cout << mpi_rank << ": " << read_data[i] << endl;
+    for (int c = 0; c < nc; c++) {
+        MPI_Offset offset = mpi_rank*local_nx*ny*sizeof(double)*2 + c*nx*ny*sizeof(double)*2;
+        rcode = MPI_File_set_view(mpi_file, offset,
+                                    MPI_DOUBLE, MPI_DOUBLE, "native", MPI_INFO_NULL);
+    
+        if(rcode != MPI_SUCCESS)
+            cerr << "Error: couldn't set file process view" << endl;
+    
+        rcode = MPI_File_read(mpi_file, eta[c], local_nx*ny*2,
+                    MPI_DOUBLE, MPI_STATUS_IGNORE);
+
+        if(rcode != MPI_SUCCESS)
+            cerr << "Error: couldn't read file" << endl;
     }
-
     MPI_File_close(&mpi_file);
 }
 
