@@ -8,12 +8,12 @@
 
 typedef std::chrono::high_resolution_clock Time;
 
-MechanicalEquilibrium::MechanicalEquilibrium(int mpi_size, int mpi_rank)
-        : PhaseField(mpi_size, mpi_rank) {
+MechanicalEquilibriumPFC::MechanicalEquilibriumPFC(int mpi_rank, int mpi_size)
+        : PhaseField(mpi_rank, mpi_size) {
 }
 
 
-void MechanicalEquilibrium::test() {
+void MechanicalEquilibriumPFC::test() {
     std::cout << "M.E. test" << std::endl;
 }
 
@@ -21,7 +21,7 @@ void MechanicalEquilibrium::test() {
  *  Method, which will take the elementwise 1st order norm
  *  of the gradient, which is assumed to be in "grad_theta"
  */
-double MechanicalEquilibrium::elementwise_avg_norm() {
+double MechanicalEquilibriumPFC::elementwise_avg_norm() {
     double local_norm = 0.0;
     for (int i = 0; i < local_nx; i++) {
         for (int j = 0; j < ny; j++) {
@@ -36,7 +36,7 @@ double MechanicalEquilibrium::elementwise_avg_norm() {
 }
 
 
-void MechanicalEquilibrium::take_step(double dz, double **neg_direction,
+void MechanicalEquilibriumPFC::take_step(double dz, double **neg_direction,
         complex<double> **eta_in, complex<double> **eta_out) {
     
     for (int i = 0; i < local_nx; i++) {
@@ -51,7 +51,7 @@ void MechanicalEquilibrium::take_step(double dz, double **neg_direction,
 }
 
 
-void MechanicalEquilibrium::steepest_descent_fixed_dz() {
+void MechanicalEquilibriumPFC::steepest_descent_fixed_dz() {
     double dz = 1.0;
     int max_iter = 10000;
     int check_freq = 100;
@@ -104,7 +104,7 @@ void MechanicalEquilibrium::steepest_descent_fixed_dz() {
  *  @param energy_io input: starting energy; output: energy of the taken step
  *  @return step size
  */
-double MechanicalEquilibrium::exp_line_search(double *energy_io, double **neg_direction) {
+double MechanicalEquilibriumPFC::exp_line_search(double *energy_io, double **neg_direction) {
     double dz_start = 1.0;
     double search_factor = 2.0;
 
@@ -194,7 +194,7 @@ double MechanicalEquilibrium::exp_line_search(double *energy_io, double **neg_di
     return dz;
 }
 
-void MechanicalEquilibrium::steepest_descent_adaptive_dz() {
+void MechanicalEquilibriumPFC::steepest_descent_adaptive_dz() {
     int max_iter = 10000;
     double tolerance = 7.5e-9;
 
@@ -238,7 +238,7 @@ void MechanicalEquilibrium::steepest_descent_adaptive_dz() {
 }
 
 
-void MechanicalEquilibrium::update_velocity_and_take_step(double dz, double gamma,
+void MechanicalEquilibriumPFC::update_velocity_and_take_step(double dz, double gamma,
         double **velocity, bool zero_vel) {
     for (int i = 0; i < local_nx; i++) {
         for (int j = 0; j < ny; j++) {
@@ -256,7 +256,7 @@ void MechanicalEquilibrium::update_velocity_and_take_step(double dz, double gamm
 }
 
 
-void MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz() {
+void MechanicalEquilibriumPFC::accelerated_steepest_descent_adaptive_dz() {
     double dz_accd = 1.0;
     int max_iter = 10000;
     double tolerance = 7.5e-9;

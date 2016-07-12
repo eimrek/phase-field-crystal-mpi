@@ -2,6 +2,7 @@
 #define PFC_H
 
 #include <complex>
+#include <string>
 #include <fftw3-mpi.h>
 
 
@@ -32,7 +33,7 @@ protected:
 
     ptrdiff_t alloc_local, local_nx, local_nx_start;
 
-    int mpi_size, mpi_rank;
+    int mpi_rank, mpi_size;
 
     double *k_x_values, *k_y_values;
     double **g_values;
@@ -73,11 +74,11 @@ public:
             complex<double> **eta_);
     void overdamped_time_step();
 
-    PhaseField(int mpi_size, int mpi_rank);
+    PhaseField(int mpi_rank, int mpi_size);
     ~PhaseField();
     
-    void write_eta_to_file();
-    void read_eta_from_file();
+    void write_eta_to_file(string filename);
+    void read_eta_from_file(string filename);
 
     void test();
 };

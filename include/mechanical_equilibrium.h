@@ -4,10 +4,16 @@
 
 #include "pfc.h"
 
-class MechanicalEquilibrium : public PhaseField {
+#include <chrono>
+
+
+typedef std::chrono::high_resolution_clock Time;
+
+
+class MechanicalEquilibriumPFC : public PhaseField {
     
 public:
-    MechanicalEquilibrium(int mpi_size, int mpi_rank);
+    MechanicalEquilibriumPFC(int mpi_rank, int mpi_size);
 
     void test();
     double elementwise_avg_norm();

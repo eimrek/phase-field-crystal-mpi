@@ -1,7 +1,6 @@
 
 #include <iostream>
 #include <cstdlib>
-#include <string>
 
 
 #include <mpi.h>
@@ -35,8 +34,8 @@ const int PhaseField::nc = 3;
 
 // ---------------------------------------------------------------
 
-PhaseField::PhaseField(int mpi_size, int mpi_rank)
-        : mpi_size(mpi_size), mpi_rank(mpi_rank) {
+PhaseField::PhaseField(int mpi_rank, int mpi_size)
+        : mpi_rank(mpi_rank), mpi_size(mpi_size) {
 
     fftw_mpi_init(); 
    
@@ -192,10 +191,10 @@ complex<double>* PhaseField::get_eta_k(int num) {
  *  NB: The whole data must fit inside root process memory
  */
 void PhaseField::output_field(complex<double>*field) {
-    complex<double>* field_total;
-    if (mpi_rank == 0) {
-        field_total = (complex<double>*) fftw_malloc(sizeof(complex<double>)*nx*ny);
-    }
+
+    complex<double> *field_total = (complex<double>*)
+            fftw_malloc(sizeof(complex<double>)*nx*ny);
+
     // local_nx*ny*2, because one fftw_complex element contains 2 doubles
     MPI_Gather(field, local_nx*ny*2, MPI_DOUBLE, field_total, local_nx*ny*2, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     if (mpi_rank == 0) {
@@ -212,9 +211,9 @@ void PhaseField::output_field(complex<double>*field) {
             std::cout << "|" << std::endl;
         }
     
-        fftw_free(field_total);
         std::cout << std::endl;
     }
+    fftw_free(field_total);
 }
 
 /*! Method to calculate the wave number values corresponding to bins in k space
@@ -431,15 +430,14 @@ void PhaseField::calculate_grad_theta(complex<double> **eta_, complex<double> **
  *  8 byte doubles, alternating real and imaginary parts,
  *  if eta[c][i*ny+j], then fastest moving index is j, then i and finally c
  */
-void PhaseField::write_eta_to_file() {
+void PhaseField::write_eta_to_file(string filename) {
 
-    char filename[] = "./testfile";
 
     // delete old file
-    if (mpi_rank == 0) MPI_File_delete(filename, MPI_INFO_NULL);
+    if (mpi_rank == 0) MPI_File_delete(filename.c_str(), MPI_INFO_NULL);
 
     MPI_File mpi_file;
-    int rcode = MPI_File_open(MPI_COMM_WORLD, filename,
+    int rcode = MPI_File_open(MPI_COMM_WORLD, filename.c_str(),
             MPI_MODE_CREATE | MPI_MODE_RDWR, MPI_INFO_NULL, &mpi_file);
 
     if (rcode != MPI_SUCCESS)
@@ -465,12 +463,10 @@ void PhaseField::write_eta_to_file() {
 /*! Reads eta from a binary file written by write_eta_to_file
  *
  */
-void PhaseField::read_eta_from_file() {
-
-    char filename[] = "./testfile";
+void PhaseField::read_eta_from_file(string filename) {
 
     MPI_File mpi_file;
-    int rcode = MPI_File_open(MPI_COMM_WORLD, "testfile", MPI_MODE_RDWR,
+    int rcode = MPI_File_open(MPI_COMM_WORLD, filename.c_str(), MPI_MODE_RDWR,
             MPI_INFO_NULL, &mpi_file);
 
     if (rcode != MPI_SUCCESS)
