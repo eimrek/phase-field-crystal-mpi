@@ -3,7 +3,10 @@
 
 #include <complex>
 #include <string>
+
 #include <fftw3-mpi.h>
+
+#include "mechanical_equilibrium.h"
 
 
 using namespace std;
@@ -17,7 +20,7 @@ using namespace std;
 #define IMAG 1
 
 class PhaseField {
-protected: 
+private: 
     static const int nx, ny;
     static const double dx, dy;
 
@@ -45,7 +48,6 @@ protected:
 
     void memcopy_eta(complex<double> **eta_to, complex<double> **eta_from);
     
-public:
 
     complex<double> **eta, **eta_k;
     fftw_plan *eta_plan_f, *eta_plan_b;
@@ -58,6 +60,11 @@ public:
 
     double **grad_theta;
 
+    MechanicalEquilibrium mech_eq;
+
+    double calculate_radius();
+
+public:
 
     void initialize_eta();
     void take_fft(fftw_plan *plan);
@@ -77,10 +84,19 @@ public:
     PhaseField(int mpi_rank, int mpi_size);
     ~PhaseField();
     
-    void write_eta_to_file(string filename);
-    void read_eta_from_file(string filename);
+    void write_eta_to_file(string filepath);
+    void read_eta_from_file(string filepath);
+
+
+    void start_calculations();
+    void run_calculations(int init_it, double time_so_far, int total_ffts, string path,
+            string run_info_filename);
+    void continue_calculations();
 
     void test();
+
+    // make MechanicalEquilibrium be able to access private members
+    friend class MechanicalEquilibrium;
 };
 
 #endif

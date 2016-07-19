@@ -38,7 +38,7 @@ obj/%.o: src/%.cpp
 	$(CXX) $(APP_CXXFLAGS) -c $< -o $@
 
 run:
-	mpirun -n 1 $(APP)
+	mpirun -n 2 $(APP)
 
 #################
 # OTHER TARGETS #
