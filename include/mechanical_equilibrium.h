@@ -14,14 +14,8 @@ class PhaseField;
 
 class MechanicalEquilibrium {
     PhaseField *pfc;
-public:
-    MechanicalEquilibrium(PhaseField *pfc);
 
     double elementwise_avg_norm();
-
-    int steepest_descent_fixed_dz();
-    int steepest_descent_adaptive_dz();
-    int accelerated_steepest_descent_adaptive_dz(int *p_n_fft);
 
     double exp_line_search(double *energy_io, double **neg_direction, int *p_n_fft);
 
@@ -30,6 +24,14 @@ public:
 
     void update_velocity_and_take_step(double dz, double gamma,
         double **velocity, bool zero_vel); 
+
+public:
+    MechanicalEquilibrium(PhaseField *pfc);
+
+    int steepest_descent_fixed_dz();
+    int steepest_descent_adaptive_dz();
+    int accelerated_steepest_descent();
+    int accelerated_steepest_descent_adaptive_dz(int *p_n_fft);
 
 };
 

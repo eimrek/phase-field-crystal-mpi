@@ -141,7 +141,7 @@ PhaseField::~PhaseField() {
 /*! Method, that initializes the state to a elastically rotated circle
  *
  */
-void PhaseField::initialize_eta() {
+void PhaseField::initialize_eta_circle() {
     double angle = 0.0872665;
     double amplitude = 0.10867304595992146;
 
@@ -156,7 +156,7 @@ void PhaseField::initialize_eta() {
                                     - q_vec[c][0])*(i_gl+1-nx/2.0)*dx
                                  + (-q_vec[c][0]*sin(angle) + q_vec[c][1]*cos(angle)
                                     - q_vec[c][1])*(j+1-ny/2.0)*dy;
-                    eta[c][i*ny + j] = amplitude*exp(J*theta);
+                    eta[c][i*ny + j] = amplitude*exp(complex<double>(0.0, 1.0)*theta);
                 } else {
                     // Outside the circle
                     eta[c][i*ny + j] = amplitude;
@@ -165,6 +165,28 @@ void PhaseField::initialize_eta() {
         }
     }
 }
+
+
+/*! Method, that initializes the state of eta to liquid with a seed in center
+ *
+ */
+void PhaseField::initialize_eta_seed() {
+    double amplitude = 0.10867304595992146;
+    double seed_radius = 0.05*nx*dx;
+
+    for (int i = 0; i < local_nx; i++) {
+        int i_gl = i + local_nx_start;
+        for (int j = 0; j < ny; j++) {
+            for (int c = 0; c < nc; c++) {
+                double center_dist = sqrt((i_gl+1-nx/2.0)*(i_gl+1-nx/2.0)*dx*dx
+                                     + (j+1-ny/2.0)*(j+1-ny/2.0)*dy*dy);
+                double rd = center_dist/seed_radius;
+                eta[c][i*ny + j] = amplitude/(rd*rd*rd*rd+1);
+            }
+        }
+    }
+}
+
 
 void PhaseField::take_fft(fftw_plan *plan) {
     for (int i = 0; i < nc; i++) {
@@ -285,7 +307,6 @@ double PhaseField::calculate_energy(complex<double> **eta_, complex<double> **et
     // Go to real space for (G_j eta_j)
     take_fft(buffer_plan_b);
     normalize_field(buffer);
-
 
     // Integrate the whole expression over space and divide by num cells to get density
     // NB: this will be the contribution from local MPI process only
@@ -541,7 +562,7 @@ void PhaseField::start_calculations() {
     Time::time_point time_start = Time::now();
 
     // initialize eta and eta_k
-    initialize_eta();
+    initialize_eta_circle();
     take_fft(eta_plan_f);
 
     double energy = calculate_energy(eta, eta_k);

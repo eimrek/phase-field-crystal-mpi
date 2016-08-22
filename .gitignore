@@ -5,4 +5,7 @@ obj/*
 testfile
 output/*
 *.sh
+.project
+.cproject
+.settings/*
 

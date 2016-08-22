@@ -243,6 +243,79 @@ int MechanicalEquilibrium::steepest_descent_adaptive_dz() {
 }
 
 
+int MechanicalEquilibrium::accelerated_steepest_descent() {
+	double dz_accd = 1.0;
+	int max_iter = 10000;
+	double tolerance = 7.5e-9;
+	//double tolerance = 1.0e-8;
+	bool print = false;
+
+	int check_freq = 100;
+
+	double gamma = 0.992;
+
+	Time::time_point time_start = Time::now();
+	Time::time_point time_var = time_start;
+
+	// Allocate memory to hold velocity values (no need for FFT plans)
+	// Note that the actual steps will be taken in negative direction of velocity
+	double **velocity= (double **) malloc(sizeof(double*)*pfc->nc);
+	for (int i = 0; i < pfc->nc; i++)
+		velocity[i] = (double*) malloc(sizeof(double)*pfc->local_nx*pfc->ny);
+
+	double last_energy = pfc->calculate_energy(pfc->eta, pfc->eta_k);
+	// update eta_k
+	pfc->take_fft(pfc->eta_plan_f);
+
+	int it = 1;
+	while (it <= max_iter) {
+		if (it == 1) {
+			// If last step velocity is zero (or uninitialized) take normal gradient
+			pfc->calculate_grad_theta(pfc->eta, pfc->eta_k);
+
+		} else {
+			// If last step velocity is not zero, take a prediction gradient
+			take_step(gamma, velocity, pfc->eta, pfc->eta_tmp);
+			// update eta_tmp_k
+			pfc->take_fft(pfc->eta_tmp_plan_f);
+			// calculate gradient based on eta_tmp
+			pfc->calculate_grad_theta(pfc->eta_tmp, pfc->eta_tmp_k);
+		}
+		update_velocity_and_take_step(dz_accd, gamma, velocity, it == 1);
+		pfc->take_fft(pfc->eta_plan_f);
+
+		if (it % check_freq == 0) {
+			double energy = pfc->calculate_energy(pfc->eta, pfc->eta_k);
+			double error = elementwise_avg_norm();
+			if (pfc->mpi_rank == 0 && print) {
+				// timings ---------
+				double it_dur = std::chrono::duration<double>(Time::now()-time_var).count();
+				double tot_dur = std::chrono::
+					duration<double>(Time::now()-time_start).count();
+				time_var = Time::now();
+				// -----------------
+				printf("it: %5d; energy: %.16e; err: %.16e; time: %4.1f; tot_time: %6.1f\n",
+						it, energy, error, it_dur, tot_dur);
+				if (energy > last_energy) cout << "Warning: energy increased." << endl;
+				if (error < tolerance) cout << "Solution found." << endl;
+			}
+			last_energy = energy;
+			if (error < tolerance) break;
+		}
+		if (it >= max_iter && print)
+			printf("Solution was not found within %d iterations.\n", max_iter);
+		it++;
+	}
+
+	for (int i = 0; i < pfc->nc; i++)
+		fftw_free(velocity[i]);
+	free(velocity);
+
+	return it;
+
+}
+
+
 void MechanicalEquilibrium::update_velocity_and_take_step(double dz, double gamma,
         double **velocity, bool zero_vel) {
     for (int i = 0; i < pfc->local_nx; i++) {
@@ -366,4 +439,7 @@ int MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz(int *p_n_fft
 
     return it;
 }
+
+
+
 

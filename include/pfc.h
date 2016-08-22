@@ -14,10 +14,6 @@ using namespace std;
 #define sq3 1.7320508075688772935
 #define PI 3.14159265358979323846
 
-#define J complex<double>(0.0, 1.0)
-
-#define REAL 0
-#define IMAG 1
 
 class PhaseField {
 private: 
@@ -66,7 +62,8 @@ private:
 
 public:
 
-    void initialize_eta();
+    void initialize_eta_circle();
+    void initialize_eta_seed();
     void take_fft(fftw_plan *plan);
     void normalize_field(complex<double> **field);
 
