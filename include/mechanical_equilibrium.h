@@ -17,7 +17,7 @@ class MechanicalEquilibrium {
 
     double elementwise_avg_norm();
 
-    double exp_line_search(double *energy_io, double **neg_direction, int *p_n_fft);
+    double exp_line_search(double *energy_io, double **neg_direction);
 
     void take_step(double dz, double **neg_direction,
         complex<double> **eta_in, complex<double> **eta_out);
@@ -31,7 +31,7 @@ public:
     int steepest_descent_fixed_dz();
     int steepest_descent_adaptive_dz();
     int accelerated_steepest_descent();
-    int accelerated_steepest_descent_adaptive_dz(int *p_n_fft);
+    int accelerated_steepest_descent_adaptive_dz();
 
 };
 

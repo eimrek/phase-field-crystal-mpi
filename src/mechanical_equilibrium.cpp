@@ -100,8 +100,7 @@ int MechanicalEquilibrium::steepest_descent_fixed_dz() {
  *  @param energy_io input: starting energy; output: energy of the taken step
  *  @return step size
  */
-double MechanicalEquilibrium::exp_line_search(double *energy_io, double **neg_direction,
-        int *p_n_fft) {
+double MechanicalEquilibrium::exp_line_search(double *energy_io, double **neg_direction) {
     double dz_start = 1.0;
     double search_factor = 2.0;
 
@@ -122,8 +121,8 @@ double MechanicalEquilibrium::exp_line_search(double *energy_io, double **neg_di
 
     // Take initial step and store result to eta_tmp
     take_step(dz_start, neg_direction, pfc->eta, pfc->eta_tmp);
-    pfc->take_fft(pfc->eta_tmp_plan_f); (*p_n_fft)++;
-    double energy = pfc->calculate_energy(pfc->eta_tmp, pfc->eta_tmp_k); (*p_n_fft)++;
+    pfc->take_fft(pfc->eta_tmp_plan_f);
+    double energy = pfc->calculate_energy(pfc->eta_tmp, pfc->eta_tmp_k);
 
     if (energy < *energy_io) {
         // save the successful step
@@ -144,10 +143,8 @@ double MechanicalEquilibrium::exp_line_search(double *energy_io, double **neg_di
         dz *= search_factor;
 
         take_step(dz, neg_direction, pfc->eta, pfc->eta_tmp);
-        pfc->take_fft(pfc->eta_tmp_plan_f); (*p_n_fft)++;
-        double energy = pfc->calculate_energy(pfc->eta_tmp, pfc->eta_tmp_k); (*p_n_fft)++;
-
-        //printf("dz: %4.2f; en: %.16e\n", dz, energy);
+        pfc->take_fft(pfc->eta_tmp_plan_f);
+        double energy = pfc->calculate_energy(pfc->eta_tmp, pfc->eta_tmp_k);
 
         // If we're searching bigger steps, take longest step, which
         // decreases the energy
@@ -215,8 +212,7 @@ int MechanicalEquilibrium::steepest_descent_adaptive_dz() {
     for (; it <= max_iter; it++) {
         // Do the exponential line search to find optimal step
         // will update eta, eta_k and also store new energy value
-        int num_fft = 0;
-        double dz = exp_line_search(&energy, pfc->grad_theta, &num_fft);
+        double dz = exp_line_search(&energy, pfc->grad_theta);
 
         // for this iteration's error check and next iteration's step
         pfc->calculate_grad_theta(pfc->eta, pfc->eta_k);
@@ -335,9 +331,9 @@ void MechanicalEquilibrium::update_velocity_and_take_step(double dz, double gamm
 
 
 /*! 
- *  num_fft is an output parameter, which will contain the total number of ffts taken
+ *  Accelerated steepest descent with occasional line search
  */
-int MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz(int *p_n_fft) {
+int MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz() {
     double dz_accd = 1.0;
     int max_iter = 10000;
     double tolerance = 7.5e-9;
@@ -353,7 +349,6 @@ int MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz(int *p_n_fft
     Time::time_point time_start = Time::now();
     Time::time_point time_var = time_start;
 
-    *p_n_fft = 0;
 
     // Allocate memory to hold velocity values (no need for FFT plans)
     // Note that the actual steps will be taken in negative direction of velocity
@@ -364,9 +359,9 @@ int MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz(int *p_n_fft
     // Boolean when to ignore velocity (first iteration and after adaptive steps)
     bool zero_velocity = true;
 
-    double last_energy = pfc->calculate_energy(pfc->eta, pfc->eta_k); (*p_n_fft)++;
+    double last_energy = pfc->calculate_energy(pfc->eta, pfc->eta_k);
     // update eta_k 
-    pfc->take_fft(pfc->eta_plan_f); (*p_n_fft)++;
+    pfc->take_fft(pfc->eta_plan_f);
 
     int it = 1;
     while (it <= max_iter) {
@@ -374,17 +369,16 @@ int MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz(int *p_n_fft
             // -----------------------------------------------
             // Run the specified number of adaptive steps
             for (int sn = 0; sn < num_adaptive_steps; sn++) {
-                pfc->calculate_grad_theta(pfc->eta, pfc->eta_k); (*p_n_fft)++;
+                pfc->calculate_grad_theta(pfc->eta, pfc->eta_k);
 
-                double energy_io = pfc->calculate_energy(pfc->eta, pfc->eta_k); (*p_n_fft)++;
-                double dz = exp_line_search(&energy_io, pfc->grad_theta, p_n_fft);
+                double energy_io = pfc->calculate_energy(pfc->eta, pfc->eta_k);
+                double dz = exp_line_search(&energy_io, pfc->grad_theta);
                 
                 double error = elementwise_avg_norm();
 
                 if (pfc->mpi_rank == 0 && print)
-                    printf("it: %5d; adaptive step: %6.1f; energy: %.16e; err: %.16e; "
-                           "num_fft: %d\n",
-                            it, dz, energy_io, error, *p_n_fft);
+                    printf("it: %5d; adaptive step: %6.1f; energy: %.16e; err: %.16e\n",
+                            it, dz, energy_io, error);
 
                 last_energy = energy_io;
                 it++;
@@ -395,22 +389,22 @@ int MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz(int *p_n_fft
         // Resume with accelerated descent
         if (zero_velocity) {
             // If last step velocity is zero (or uninitialized) take normal gradient
-            pfc->calculate_grad_theta(pfc->eta, pfc->eta_k); (*p_n_fft)++;
+            pfc->calculate_grad_theta(pfc->eta, pfc->eta_k);
 
         } else {
             // If last step velocity is not zero, take a prediction gradient
             take_step(gamma, velocity, pfc->eta, pfc->eta_tmp);
             // update eta_tmp_k
-            pfc->take_fft(pfc->eta_tmp_plan_f); (*p_n_fft)++;
+            pfc->take_fft(pfc->eta_tmp_plan_f);
             // calculate gradient based on eta_tmp_k
-            pfc->calculate_grad_theta(pfc->eta_tmp, pfc->eta_tmp_k); (*p_n_fft)++;
+            pfc->calculate_grad_theta(pfc->eta_tmp, pfc->eta_tmp_k);
         }
         update_velocity_and_take_step(dz_accd, gamma, velocity, zero_velocity);
-        pfc->take_fft(pfc->eta_plan_f); (*p_n_fft)++;
+        pfc->take_fft(pfc->eta_plan_f);
         zero_velocity = false;
 
         if (it % check_freq == 0) {
-            double energy = pfc->calculate_energy(pfc->eta, pfc->eta_k); (*p_n_fft)++;
+            double energy = pfc->calculate_energy(pfc->eta, pfc->eta_k);
             double error = elementwise_avg_norm();
             if (pfc->mpi_rank == 0 && print) {
                 // timings ---------
@@ -419,9 +413,8 @@ int MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz(int *p_n_fft
                     duration<double>(Time::now()-time_start).count();
                 time_var = Time::now();
                 // -----------------
-                printf("it: %5d; energy: %.16e; err: %.16e; time: %4.1f; tot_time: %6.1f; "
-                       "num_fft: %d\n",
-                        it, energy, error, it_dur, tot_dur, *p_n_fft);
+                printf("it: %5d; energy: %.16e; err: %.16e; time: %4.1f; tot_time: %6.1f\n",
+                        it, energy, error, it_dur, tot_dur);
                 if (energy > last_energy) cout << "Warning: energy increased." << endl;
                 if (error < tolerance) cout << "Solution found." << endl;
             }
