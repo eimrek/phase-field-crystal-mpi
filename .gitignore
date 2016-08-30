@@ -4,7 +4,6 @@ obj/*
 *.swp
 testfile
 output/*
-*.sh
 .project
 .cproject
 .settings/*
