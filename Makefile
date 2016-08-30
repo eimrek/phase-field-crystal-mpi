@@ -29,7 +29,7 @@ OBJS = obj/main.o obj/pfc.o obj/mechanical_equilibrium.o
 ####################
 
 # Default target to run all targets to build the application
-all: $(APP) run
+all: $(APP)
 
 # Target that links the objects to the executable
 # NB: objects are a dependency
@@ -37,7 +37,7 @@ $(APP): $(OBJS)
 	$(CXX) $(OBJS) -o $(APP) $(LFLAGS)
 
 # Target that compiles sources to object files
-obj/%.o: src/%.cpp 
+obj/%.o: src/%.cpp
 	$(CXX) $(APP_CXXFLAGS) -c $< -o $@
 
 run:

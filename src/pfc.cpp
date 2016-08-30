@@ -18,8 +18,8 @@
 //
 // initialization could also be done in header, if const->constexpr 
 
-const int PhaseField::nx = 2048;
-const int PhaseField::ny = 2048;
+const int PhaseField::nx = 384;
+const int PhaseField::ny = 384;
 
 const double PhaseField::dx = 2.0;
 const double PhaseField::dy = 2.0;
@@ -619,6 +619,16 @@ void PhaseField::start_calculations() {
 
     string path = "./output/seed_run/";
     string run_info_filename = "run_info.txt";
+
+    // check if program can find the path
+    if (mpi_rank == 0) {
+		FILE * run_info_file = fopen((path+run_info_filename).c_str(), "w");
+		if (run_info_file == NULL) {
+			std::cout << "Can't access " << (path+run_info_filename) << std::endl;
+			MPI_Abort(MPI_COMM_WORLD, 1);
+		}
+		fclose(run_info_file);
+    }
 
     // initialize eta and eta_k
     initialize_eta_multiple_seeds();
