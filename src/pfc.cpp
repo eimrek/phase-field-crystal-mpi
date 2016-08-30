@@ -751,19 +751,17 @@ void PhaseField::test() {
 	initialize_eta_multiple_seeds();
 	take_fft(eta_plan_f);
 	write_eta_to_file("./output/seed_run/initial_conf.bin");
-	/*
+
     for (int it = 0; it < 80; it++) {
         overdamped_time_step();
     }
 
     double energy = calculate_energy(eta, eta_k);
-	double radius = calculate_radius();
 	if (mpi_rank == 0)
-		printf("Initial state - energy: %.16e; radius: %5.1f\n", energy, radius);
+		printf("Initial state - energy: %.16e\n", energy);
 
     mech_eq.lbfgs_enhanced();
-	//int iter = mech_eq.steepest_descent_fixed_dz();
-*/
+
 }
 
 
