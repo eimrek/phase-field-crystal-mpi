@@ -6,7 +6,7 @@
 #include <vector>
 #include <cstring>
 #include <array>
-
+#include <tuple>
 
 #include <mpi.h>
 #include <fftw3-mpi.h>
@@ -18,8 +18,8 @@
 //
 // initialization could also be done in header, if const->constexpr 
 
-const int PhaseField::nx = 384;
-const int PhaseField::ny = 384;
+const int PhaseField::nx = 2048;
+const int PhaseField::ny = 2048;
 
 const double PhaseField::dx = 2.0;
 const double PhaseField::dy = 2.0;
@@ -42,7 +42,7 @@ const int PhaseField::nc = 3;
 PhaseField::PhaseField(int mpi_rank, int mpi_size)
         : mpi_rank(mpi_rank), mpi_size(mpi_size), mech_eq(this) {
 
-    fftw_mpi_init(); 
+    fftw_mpi_init();
    
     // Allocate and calculate k values
     k_x_values = (double*) malloc(sizeof(double)*nx);
@@ -74,9 +74,9 @@ PhaseField::PhaseField(int mpi_rank, int mpi_size)
     // Allocate memory for G_j values and theta gradient
     g_values = (double**) malloc(sizeof(double*)*nc);
     grad_theta = (double**) malloc(sizeof(double*)*nc);
-    for (int i = 0; i < nc; i++) {
-        g_values[i] = (double*) malloc(sizeof(double)*local_nx*ny);
-        grad_theta[i] = (double*) malloc(sizeof(double)*local_nx*ny);
+    for (int c = 0; c < nc; c++) {
+        g_values[c] = (double*) malloc(sizeof(double)*local_nx*ny);
+        grad_theta[c] = (double*) malloc(sizeof(double)*local_nx*ny);
     }
     calculate_g_values(g_values);
 
@@ -87,33 +87,33 @@ PhaseField::PhaseField(int mpi_rank, int mpi_size)
         eta_plan_f[i] = fftw_mpi_plan_dft_2d(nx, ny,
                 reinterpret_cast<fftw_complex*>(eta[i]),
                 reinterpret_cast<fftw_complex*>(eta_k[i]),
-                MPI_COMM_WORLD, FFTW_FORWARD, FFTW_MEASURE);
+                MPI_COMM_WORLD, FFTW_FORWARD, FFTW_ESTIMATE);
         eta_plan_b[i] = fftw_mpi_plan_dft_2d(nx, ny,
                 reinterpret_cast<fftw_complex*>(eta_k[i]),
                 reinterpret_cast<fftw_complex*>(eta[i]),
-                MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_MEASURE);
+                MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_ESTIMATE);
 
         eta_tmp[i] = reinterpret_cast<complex<double>*>(fftw_alloc_complex(alloc_local));
         eta_tmp_k[i] = reinterpret_cast<complex<double>*>(fftw_alloc_complex(alloc_local));
         eta_tmp_plan_f[i] = fftw_mpi_plan_dft_2d(nx, ny,
                 reinterpret_cast<fftw_complex*>(eta_tmp[i]),
                 reinterpret_cast<fftw_complex*>(eta_tmp_k[i]),
-                MPI_COMM_WORLD, FFTW_FORWARD, FFTW_MEASURE);
+                MPI_COMM_WORLD, FFTW_FORWARD, FFTW_ESTIMATE);
         eta_tmp_plan_b[i] = fftw_mpi_plan_dft_2d(nx, ny,
                 reinterpret_cast<fftw_complex*>(eta_tmp_k[i]),
                 reinterpret_cast<fftw_complex*>(eta_tmp[i]),
-                MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_MEASURE);
+                MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_ESTIMATE);
 
         buffer[i] = reinterpret_cast<complex<double>*>(fftw_alloc_complex(alloc_local));
         buffer_k[i] = reinterpret_cast<complex<double>*>(fftw_alloc_complex(alloc_local));
         buffer_plan_f[i] = fftw_mpi_plan_dft_2d(nx, ny,
                 reinterpret_cast<fftw_complex*>(buffer[i]),
                 reinterpret_cast<fftw_complex*>(buffer_k[i]),
-                MPI_COMM_WORLD, FFTW_FORWARD, FFTW_MEASURE);
+                MPI_COMM_WORLD, FFTW_FORWARD, FFTW_ESTIMATE);
         buffer_plan_b[i] = fftw_mpi_plan_dft_2d(nx, ny,
                 reinterpret_cast<fftw_complex*>(buffer_k[i]),
                 reinterpret_cast<fftw_complex*>(buffer[i]),
-                MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_MEASURE);
+                MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_ESTIMATE);
     }
 
 }
@@ -121,10 +121,10 @@ PhaseField::PhaseField(int mpi_rank, int mpi_size)
 PhaseField::~PhaseField() {
     for (int i = 0; i < nc; i++) {
         fftw_free(eta[i]); fftw_free(eta_k[i]);
-        fftw_destroy_plan(eta_plan_f[i]); fftw_destroy_plan(eta_plan_b[i]); 
+        fftw_destroy_plan(eta_plan_f[i]); fftw_destroy_plan(eta_plan_b[i]);
 
         fftw_free(buffer[i]); fftw_free(buffer_k[i]);
-        fftw_destroy_plan(buffer_plan_f[i]); fftw_destroy_plan(buffer_plan_b[i]); 
+        fftw_destroy_plan(buffer_plan_f[i]); fftw_destroy_plan(buffer_plan_b[i]);
 
         free(g_values[i]);
     }
@@ -182,6 +182,67 @@ void PhaseField::initialize_eta_seed() {
                                      + (j+1-ny/2.0)*(j+1-ny/2.0)*dy*dy);
                 double rd = center_dist/seed_radius;
                 eta[c][i*ny + j] = amplitude/(rd*rd*rd*rd+1);
+            }
+        }
+    }
+}
+
+/*! Method, that initializes the state of eta to liquid with a seed in center
+ *
+ */
+void PhaseField::initialize_eta_multiple_seeds() {
+    double amplitude = 0.10867304595992146;
+
+    // <rel_x, rel_y, size, angle>
+    std::vector<std::tuple<double, double, double, double>> seeds = {
+    		std::make_tuple(0.86, 0.66, 0.06, -0.20),
+			std::make_tuple(0.59, 0.21, 0.03, -0.10),
+			std::make_tuple(0.33, 0.80, 0.06,  0.00),
+			std::make_tuple(0.38, 0.41, 0.06,  0.10),
+			std::make_tuple(0.51, 0.17, 0.03,  0.20),
+			std::make_tuple(0.16, 0.19, 0.03,  0.15),
+			std::make_tuple(0.99, 0.99, 0.12,  0.15)
+    };
+
+    for (int i = 0; i < local_nx; i++) {
+        int i_gl = i + local_nx_start;
+        for (int j = 0; j < ny; j++) {
+            for (int c = 0; c < nc; c++) {
+            	eta[c][i*ny + j] = 0.0;
+            	for (auto seed : seeds) {
+            		// current coordinates
+            		double x = i_gl*dx;
+            		double y = j*dy;
+
+            		// seed center coordinates
+            		double x_c = (nx-1)*std::get<0>(seed)*dx;
+            		double y_c = (ny-1)*std::get<1>(seed)*dy;
+
+            		// differences considering periodic boundary
+            		double x_dif = (abs(x-x_c) < nx*dx-abs(x-x_c)) ? (x-x_c) : (nx*dx-(x-x_c));
+            		double y_dif = (abs(y-y_c) < ny*dy-abs(y-y_c)) ? (y-y_c) : (ny*dy-(y-y_c));
+
+            		if (abs(x-x_c) < nx*dx-abs(x-x_c)) x_dif = x-x_c;
+            		else if (abs((x+nx*dx)-x_c) < abs((x-nx*dx)-x_c)) x_dif = (x+nx*dx)-x_c;
+            		else x_dif = (x-nx*dx)-x_c;
+
+            		if (abs(y-y_c) < ny*dy-abs(y-y_c)) y_dif = y-y_c;
+					else if (abs((y+ny*dy)-y_c) < abs((y-ny*dy)-y_c)) y_dif = (y+ny*dy)-y_c;
+					else y_dif = (y-ny*dy)-y_c;
+
+            		// distance from center (considering periodic boundary)
+            		double center_dist = std::sqrt(x_dif*x_dif + y_dif*y_dif);
+            		double rd = center_dist/(std::get<2>(seed)*nx*dx);
+
+            		// apply a rotation around point (x_c, y_c) by the angle
+            		double ang = std::get<3>(seed);
+
+            		double theta = q_vec[c][0]*((cos(ang)-1)*x_dif - sin(ang)*y_dif)
+								   + q_vec[c][1]*(sin(ang)*x_dif + (cos(ang)-1)*y_dif);
+
+                    eta[c][i*ny + j] += amplitude/(rd*rd*rd*rd+1)
+                    					* exp(complex<double>(0.0, 1.0)*theta);
+            	}
             }
         }
     }
@@ -381,11 +442,11 @@ void PhaseField::overdamped_time_step() {
     take_fft(buffer_plan_f);
     
     // now eta_k can be evaluated correspondingly to the scheme
-    for (int i = 0; i < local_nx; i++) {
-        for (int j = 0; j < ny; j++) {
-            for (int c = 0; c < nc; c++) {
-                eta_k[c][i*ny + j] = buffer_k[c][i*ny + j] / (1.0 + dt*(bl-bx
-                                        +bx*g_values[c][i*ny + j]*g_values[c][i*ny + j]));
+    for (int c = 0; c < nc; c++) {
+		for (int i = 0; i < local_nx; i++) {
+			for (int j = 0; j < ny; j++) {
+				eta_k[c][i*ny + j] = buffer_k[c][i*ny + j] / (1.0 + dt*(bl-bx
+										+bx*g_values[c][i*ny + j]*g_values[c][i*ny + j]));
             }
         }
     }
@@ -556,107 +617,67 @@ double PhaseField::calculate_radius() {
  */
 void PhaseField::start_calculations() {
 
-    string path = "./output/testrun/";
+    string path = "./output/seed_run/";
     string run_info_filename = "run_info.txt";
-    
-    Time::time_point time_start = Time::now();
 
     // initialize eta and eta_k
-    initialize_eta_circle();
+    initialize_eta_multiple_seeds();
     take_fft(eta_plan_f);
 
     double energy = calculate_energy(eta, eta_k);
-    double radius = calculate_radius();
     if (mpi_rank == 0)
-        printf("Initial state - energy: %.16e; radius: %5.1f\n", energy, radius);
+        printf("Initial state - energy: %.16e\n", energy);
 
-    int initial_od_steps = 10000;
-
-    for (int it = 0; it < initial_od_steps; it++) {
-        overdamped_time_step();
-    }
-
-    energy = calculate_energy(eta, eta_k);
-    radius = calculate_radius();
-
-    if (mpi_rank == 0) {
-        double total_dur = std::chrono::duration<double>(Time::now()-time_start).count();
-        printf("%d OD steps: energy %.16e; radius: %5.1f; total_time: %7.1f\n",
-                initial_od_steps, energy, radius, total_dur);
-    }
-
-    int num_fft = 0;
-    int meq_iter = mech_eq.accelerated_steepest_descent_adaptive_dz(&num_fft);
-    energy = calculate_energy(eta, eta_k);
-    double total_dur = std::chrono::duration<double>(Time::now()-time_start).count();
-    if (mpi_rank == 0) {
-        printf("Initial mech. eq.: energy %.16e; iter: %5d; total_time: %7.1f\n",
-                energy, meq_iter, total_dur);
-    }
-
-
-    run_calculations(initial_od_steps, total_dur, num_fft, path, run_info_filename);
+    run_calculations(0, 0.0, path, run_info_filename);
 }
 
 
-void PhaseField::run_calculations(int init_it, double time_so_far, int total_ffts,
+void PhaseField::run_calculations(int init_it, double time_so_far,
         string path, string run_info_filename) {
 
     Time::time_point time_start = Time::now();
     Time::time_point time_var = Time::now();
 
     // Start repetitions of overdamped steps and mechanical equilibrium
-    int repetitions = 10000;
+    int repetitions = 1500;
     int od_steps = 80;
 
-    int save_freq = 100;
+    int save_freq = 50;
     FILE * run_info_file;
 
-    int it = init_it; // total over-damped iteration counter
-    double last_radius = -1.0;
+    int ts = init_it; // total over-damped timesteps counter
 
     for (int rep = 0; rep < repetitions; rep++) {
         time_var = Time::now();
         // Over-damped timesteps
-        for (int ts = 0; ts < od_steps; ts++) {
+        for (int ts_ = 0; ts_ < od_steps; ts_++) {
             overdamped_time_step();
         }
-        it += od_steps;
+        ts += od_steps;
         double od_dur = std::chrono::duration<double>(Time::now()-time_var).count();
         // Mechanical equilibration
-        int num_fft = 0;
-        int meq_iter = mech_eq.accelerated_steepest_descent_adaptive_dz(&num_fft);
-        total_ffts += num_fft;
+        int meq_iter = mech_eq.lbfgs_enhanced();
         double meq_dur = std::chrono::duration<double>(Time::now()-time_var).count()
                            - od_dur;
         double energy = calculate_energy(eta, eta_k);
-        double radius = calculate_radius();
         double total_dur = std::chrono::duration<double>(Time::now()-time_start).count()
                             + time_so_far;
         if (mpi_rank == 0) {
             // Print run information
-            printf("it: %5d; stime: %7.1f; energy: %.16e; radius: %5.1f; od_time: %4.1f; "
-                   "meq_iter: %4d; meq_time: %5.1f; total_ffts: %d, total_time: %7.1f\n",
-                   it, it*dt, energy, radius, od_dur,
-                   meq_iter, meq_dur, total_ffts, total_dur);
+            printf("ts: %5d; stime: %7.1f; energy: %.16e; od_time: %4.1f; "
+                   "meq_iter: %d; meq_time: %5.1f; total_time: %7.1f\n",
+				   ts, ts*dt, energy, od_dur,
+                   meq_iter, meq_dur, total_dur);
             // Save run information also to a file
             run_info_file = fopen((path+run_info_filename).c_str(), "a");
-            fprintf(run_info_file, "%d %.1f %.16e %.1f %.1f %d %.1f %d %.1f\n",
-                    it, it*dt, energy, radius, od_dur,
-                    meq_iter, meq_dur, total_ffts, total_dur);
+            fprintf(run_info_file, "%d %.1f %.16e %.1f %d %.1f %.1f\n",
+            		ts, ts*dt, energy, od_dur,
+                    meq_iter, meq_dur, total_dur);
             fclose(run_info_file);
-        }
-        if (last_radius > 0 && radius > last_radius) {
-            std::stringstream sstream;
-            sstream << std::fixed << std::setprecision(0) << it*dt;
-            write_eta_to_file(path+"eta_"+sstream.str()+".bin");
-            cout << "Radius increased. Probably reached the end of calculations. Ending."
-                << endl;
-            break;
         }
         if (rep % save_freq == 0) {
             std::stringstream sstream;
-            sstream << std::fixed << std::setprecision(0) << it*dt;
+            sstream << std::fixed << std::setprecision(0) << ts*dt;
             write_eta_to_file(path+"eta_"+sstream.str()+".bin");
         }
     }
@@ -678,17 +699,17 @@ void PhaseField::continue_calculations() {
 
     FILE * run_info_file = fopen((path+run_info_filename).c_str(), "r");
 
-    std::vector< std::array<double, 9> > data;
+    std::vector< std::array<double, 7> > data;
 
-    int init_it, meq_iter, total_ffts;
-    double stime, en, rad, odd, meqd, total_dur;
+    int init_it, meq_iter;
+    double stime, en, odd, meqd, total_dur;
     // Read the data until the starting point from run_info_file
-    while (fscanf(run_info_file, "%d %lf %lf %lf %lf %d %lf %d %lf\n",
-                    &init_it, &stime, &en, &rad, &odd, &meq_iter,
-                    &meqd, &total_ffts, &total_dur) != EOF) {
-        std::array<double, 9> line{
-            {double(init_it), stime, en, rad, odd, double(meq_iter), meqd,
-                double(total_ffts), total_dur}
+    while (fscanf(run_info_file, "%d %lf %lf %lf %d %lf %lf\n",
+                    &init_it, &stime, &en, &odd, &meq_iter,
+                    &meqd, &total_dur) != EOF) {
+        std::array<double, 7> line{
+            {double(init_it), stime, en, odd, double(meq_iter), meqd,
+                total_dur}
         };
         data.push_back(line);
         if (abs(stime-continue_stime) < 0.1) break;
@@ -698,10 +719,10 @@ void PhaseField::continue_calculations() {
     run_info_file = fopen((path+run_info_filename).c_str(), "w");
     // Overwrite the data with only the relevant part
     for (unsigned int ln = 0; ln < data.size(); ln++) {
-        fprintf(run_info_file, "%d %.1f %.16e %.1f %.1f %d %.1f %d %.1f\n",
+        fprintf(run_info_file, "%d %.1f %.16e %.1f %d %.1f %d %.1f\n",
                 int(data[ln][0]), data[ln][1], data[ln][2],
-                data[ln][3], data[ln][4], int(data[ln][5]),
-                data[ln][6], int(data[ln][7]), data[ln][8]);
+                data[ln][3], int(data[ln][4]),
+                data[ln][5], int(data[ln][6]), data[ln][7]);
     }
     fclose(run_info_file);
 
@@ -709,23 +730,30 @@ void PhaseField::continue_calculations() {
         cout << "Read info from " << run_info_filename
              << " and cleaned redundant entries." << endl; 
 
-    run_calculations(init_it, total_dur, total_ffts, path, run_info_filename);
+    run_calculations(init_it, total_dur, path, run_info_filename);
 }
 
 
 void PhaseField::test() {
 
-    read_eta_from_file("./output/testrun/eta_20.bin");
+    //read_eta_from_file("./output/testrun/eta_1260.bin");
 
+	initialize_eta_multiple_seeds();
+	take_fft(eta_plan_f);
+	write_eta_to_file("./output/seed_run/initial_conf.bin");
+	/*
     for (int it = 0; it < 80; it++) {
         overdamped_time_step();
     }
 
-    int num_fft = 0;
-    int iter = mech_eq.accelerated_steepest_descent_adaptive_dz(&num_fft);
+    double energy = calculate_energy(eta, eta_k);
+	double radius = calculate_radius();
+	if (mpi_rank == 0)
+		printf("Initial state - energy: %.16e; radius: %5.1f\n", energy, radius);
 
-    cout << num_fft << endl;
-    
+    mech_eq.lbfgs_enhanced();
+	//int iter = mech_eq.steepest_descent_fixed_dz();
+*/
 }
 
 

@@ -1,7 +1,10 @@
 
+# Library locations
+MPI_LOC = /opt/openmpi
+FFTW_LOC = /opt/fftw-3.3.4
 
 # The compiler
-CXX = mpic++
+CXX = $(MPI_LOC)/bin/mpic++
 
 # Compiler parameters
 # -Wall		shows all warnings when compiling
@@ -10,13 +13,13 @@ CXX = mpic++
 CXXFLAGS = -Wall -std=c++11 -O3
 
 # Linker parameters
-LFLAGS = -L/opt/fftw-3.3.4/lib -lfftw3_mpi -lfftw3 -lm
+LFLAGS = -L$(FFTW_LOC)/lib -lfftw3_mpi -lfftw3 -lm
 
 # Name of the applications
 APP = bin/pfc
 
 # Application compilation settings
-APP_CXXFLAGS = $(CXXFLAGS) -Iinclude -I/opt/fftw-3.3.4/include
+APP_CXXFLAGS = $(CXXFLAGS) -Iinclude -I$(FFTW_LOC)/include
 
 # Object files
 OBJS = obj/main.o obj/pfc.o obj/mechanical_equilibrium.o
@@ -38,7 +41,7 @@ obj/%.o: src/%.cpp
 	$(CXX) $(APP_CXXFLAGS) -c $< -o $@
 
 run:
-	mpirun -n 2 $(APP)
+	$(MPI_LOC)/bin/mpirun -n 1 $(APP)
 
 #################
 # OTHER TARGETS #

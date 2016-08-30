@@ -1,5 +1,7 @@
 
 #include <iostream>
+#include <cstring>
+#include <cstdlib>
 
 #include <mpi.h>
 
@@ -18,10 +20,10 @@ MechanicalEquilibrium::MechanicalEquilibrium(PhaseField *pfc)
  */
 double MechanicalEquilibrium::elementwise_avg_norm() {
     double local_norm = 0.0;
-    for (int i = 0; i < pfc->local_nx; i++) {
-        for (int j = 0; j < pfc->ny; j++) {
-            for (int c = 0; c < pfc->nc; c++) {
-               local_norm += abs(pfc->grad_theta[c][i*pfc->ny + j]); 
+    for (int c = 0; c < pfc->nc; c++) {
+		for (int i = 0; i < pfc->local_nx; i++) {
+			for (int j = 0; j < pfc->ny; j++) {
+				local_norm += abs(pfc->grad_theta[c][i*pfc->ny + j]);
             }
         }
     }
@@ -33,13 +35,12 @@ double MechanicalEquilibrium::elementwise_avg_norm() {
 
 void MechanicalEquilibrium::take_step(double dz, double **neg_direction,
         complex<double> **eta_in, complex<double> **eta_out) {
-    
-    for (int i = 0; i < pfc->local_nx; i++) {
-        for (int j = 0; j < pfc->ny; j++) {
-            for (int c = 0; c < pfc->nc; c++) {
-                double dtheta = -dz*neg_direction[c][i*pfc->ny + j];
-                eta_out[c][i*pfc->ny + j] = eta_in[c][i*pfc->ny + j]
-                                       * exp(complex<double>(0.0,1.0)*dtheta); 
+    for (int c = 0; c < pfc->nc; c++) {
+		for (int i = 0; i < pfc->local_nx; i++) {
+			for (int j = 0; j < pfc->ny; j++) {
+				double dtheta = -dz*neg_direction[c][i*pfc->ny + j];
+				eta_out[c][i*pfc->ny + j] = eta_in[c][i*pfc->ny + j]
+									   * exp(complex<double>(0.0,1.0)*dtheta);
             }
         }
     }
@@ -94,8 +95,11 @@ int MechanicalEquilibrium::steepest_descent_fixed_dz() {
 
 /*! Exponential line search method
  *
- *  Finds first suitable step by trying expoentially increasing steps
+ *  Finds first suitable step by trying exponentially increasing steps
  *  Will also set "eta" and "eta_k"
+ *
+ *  NB: Might be slow due to a lot of memory copying...
+ *  (Or it might be negligible compared to ffts)
  *
  *  @param energy_io input: starting energy; output: energy of the taken step
  *  @return step size
@@ -239,19 +243,20 @@ int MechanicalEquilibrium::steepest_descent_adaptive_dz() {
 }
 
 
-int MechanicalEquilibrium::accelerated_steepest_descent() {
-	double dz_accd = 1.0;
-	int max_iter = 10000;
-	double tolerance = 7.5e-9;
-	//double tolerance = 1.0e-8;
-	bool print = false;
+int MechanicalEquilibrium::accelerated_gradient_descent(
+		double dz, int max_iter, double tolerance, bool print
+		) {
+	//double dz = 1.0;
+	//int max_iter = 10000;
+	//double tolerance = 1.0e-7;
+	//bool print = true;
 
 	int check_freq = 100;
 
 	double gamma = 0.992;
 
-	Time::time_point time_start = Time::now();
-	Time::time_point time_var = time_start;
+	//Time::time_point time_start = Time::now();
+	Time::time_point time_var = Time::now();
 
 	// Allocate memory to hold velocity values (no need for FFT plans)
 	// Note that the actual steps will be taken in negative direction of velocity
@@ -277,34 +282,34 @@ int MechanicalEquilibrium::accelerated_steepest_descent() {
 			// calculate gradient based on eta_tmp
 			pfc->calculate_grad_theta(pfc->eta_tmp, pfc->eta_tmp_k);
 		}
-		update_velocity_and_take_step(dz_accd, gamma, velocity, it == 1);
-		pfc->take_fft(pfc->eta_plan_f);
+		update_velocity_and_take_step(dz, gamma, velocity, it == 1);
 
 		if (it % check_freq == 0) {
+			pfc->take_fft(pfc->eta_plan_f);
 			double energy = pfc->calculate_energy(pfc->eta, pfc->eta_k);
 			double error = elementwise_avg_norm();
 			if (pfc->mpi_rank == 0 && print) {
 				// timings ---------
 				double it_dur = std::chrono::duration<double>(Time::now()-time_var).count();
-				double tot_dur = std::chrono::
-					duration<double>(Time::now()-time_start).count();
+				//double tot_dur = std::chrono::
+				//	duration<double>(Time::now()-time_start).count();
 				time_var = Time::now();
 				// -----------------
-				printf("it: %5d; energy: %.16e; err: %.16e; time: %4.1f; tot_time: %6.1f\n",
-						it, energy, error, it_dur, tot_dur);
-				if (energy > last_energy) cout << "Warning: energy increased." << endl;
-				if (error < tolerance) cout << "Solution found." << endl;
+				printf("    it: %5d; energy: %.16e; err: %.16e; time: %3.1f\n",
+						it, energy, error, it_dur);
+				if (energy > last_energy) cout << "    Warning: energy increased." << endl;
+				if (error < tolerance) cout << "    Solution found." << endl;
 			}
 			last_energy = energy;
 			if (error < tolerance) break;
 		}
-		if (it >= max_iter && print)
-			printf("Solution was not found within %d iterations.\n", max_iter);
+		if (it >= max_iter && print && pfc->mpi_rank == 0)
+			printf("    Solution was not found within %d iterations.\n", max_iter);
 		it++;
 	}
 
 	for (int i = 0; i < pfc->nc; i++)
-		fftw_free(velocity[i]);
+		free(velocity[i]);
 	free(velocity);
 
 	return it;
@@ -314,16 +319,16 @@ int MechanicalEquilibrium::accelerated_steepest_descent() {
 
 void MechanicalEquilibrium::update_velocity_and_take_step(double dz, double gamma,
         double **velocity, bool zero_vel) {
-    for (int i = 0; i < pfc->local_nx; i++) {
-        for (int j = 0; j < pfc->ny; j++) {
-            for (int c = 0; c < pfc->nc; c++) {
-                if (zero_vel) 
-                    velocity[c][i*pfc->ny + j] = dz * pfc->grad_theta[c][i*pfc->ny + j];
-                else
-                    velocity[c][i*pfc->ny + j] = gamma*velocity[c][i*pfc->ny+j]
-                                            + dz*pfc->grad_theta[c][i*pfc->ny + j];
-                pfc->eta[c][i*pfc->ny + j] *= exp(complex<double>(0.0, 1.0)
-                        *(-1.0)*velocity[c][i*pfc->ny + j]);
+    for (int c = 0; c < pfc->nc; c++) {
+		for (int i = 0; i < pfc->local_nx; i++) {
+			for (int j = 0; j < pfc->ny; j++) {
+				if (zero_vel)
+					velocity[c][i*pfc->ny + j] = dz * pfc->grad_theta[c][i*pfc->ny + j];
+				else
+					velocity[c][i*pfc->ny + j] = gamma*velocity[c][i*pfc->ny+j]
+											+ dz*pfc->grad_theta[c][i*pfc->ny + j];
+				pfc->eta[c][i*pfc->ny + j] *= exp(complex<double>(0.0, 1.0)
+						*(-1.0)*velocity[c][i*pfc->ny + j]);
             }
         }
     }
@@ -333,12 +338,12 @@ void MechanicalEquilibrium::update_velocity_and_take_step(double dz, double gamm
 /*! 
  *  Accelerated steepest descent with occasional line search
  */
-int MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz() {
+int MechanicalEquilibrium::accelerated_gradient_descent_line_search() {
     double dz_accd = 1.0;
     int max_iter = 10000;
     double tolerance = 7.5e-9;
     //double tolerance = 1.0e-8;
-    bool print = false;
+    bool print = true;
 
     int adaptive_step_freq = 100;
     int num_adaptive_steps = 5;
@@ -400,10 +405,10 @@ int MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz() {
             pfc->calculate_grad_theta(pfc->eta_tmp, pfc->eta_tmp_k);
         }
         update_velocity_and_take_step(dz_accd, gamma, velocity, zero_velocity);
-        pfc->take_fft(pfc->eta_plan_f);
         zero_velocity = false;
 
         if (it % check_freq == 0) {
+            pfc->take_fft(pfc->eta_plan_f);
             double energy = pfc->calculate_energy(pfc->eta, pfc->eta_k);
             double error = elementwise_avg_norm();
             if (pfc->mpi_rank == 0 && print) {
@@ -427,12 +432,350 @@ int MechanicalEquilibrium::accelerated_steepest_descent_adaptive_dz() {
     }
 
     for (int i = 0; i < pfc->nc; i++)
-        fftw_free(velocity[i]);
+        free(velocity[i]);
     free(velocity);
 
     return it;
 }
 
+double MechanicalEquilibrium::dot_prod(double **v1, double **v2) {
+	double res = 0.0;
+	for (int c = 0; c < pfc->nc; c++)
+		for (int i = 0; i < pfc->local_nx; i++)
+			for (int j = 0; j < pfc->ny; j++)
+				res += v1[c][i*pfc->ny+j] * v2[c][i*pfc->ny+j];
+	MPI_Allreduce(&res, &res, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	return res;
+}
 
+void MechanicalEquilibrium::lbfgs_direction(int m, double ***s, double ***y,
+		double **grad, double **result) {
+
+	double* alpha = (double*) malloc(sizeof(double)*m);
+	double* rho = (double*) malloc(sizeof(double)*m);
+
+	// Copy gradient to result
+	for (int c = 0; c < pfc->nc; c++)
+		std::memcpy(result[c], grad[c], sizeof(double)*pfc->local_nx*pfc->ny);
+
+	for (int i_m = 0; i_m < m; i_m++) {
+
+		rho[i_m] = 1.0/dot_prod(s[i_m], y[i_m]);
+
+		alpha[i_m] = rho[i_m] * dot_prod(s[i_m], result);
+
+		for (int c = 0; c < pfc->nc; c++)
+			for (int i = 0; i < pfc->local_nx; i++)
+				for (int j = 0; j < pfc->ny; j++)
+					result[c][i*pfc->ny+j] -= alpha[i_m] * y[i_m][c][i*pfc->ny+j];
+	}
+	// H_0 = Identity matrix, so "r = q"
+
+	for (int i_m = m-1; i_m > -1; i_m--) {
+		double beta = rho[i_m] * dot_prod(y[i_m], result);
+
+		for (int c = 0; c < pfc->nc; c++)
+			for (int i = 0; i < pfc->local_nx; i++)
+				for (int j = 0; j < pfc->ny; j++)
+					result[c][i*pfc->ny+j] += s[i_m][c][i*pfc->ny+j]*(alpha[i_m]-beta);
+	}
+
+	free(alpha);
+	free(rho);
+}
+
+/* Moves queue such that first element points to second and so on..
+ * final element will point to the first (and the memory can be changed)
+ */
+void MechanicalEquilibrium::move_queue(int m, double ***queue) {
+	double **temp = queue[0];
+	for (int i = 0; i < m-1; i++) {
+		queue[i] = queue[i+1];
+	}
+	queue[m-1] = temp;
+}
+
+/* NB! This method is fairly sensitive to numerical noise;
+ * if FFTW_MEASURE (instead of FFTW_ESTIMATE) is used for the fftw plan,
+ * different runs on same machine will yield different results
+ * (number of iterations might fluctuate by ~1000)
+ *
+ */
+int MechanicalEquilibrium::lbfgs() {
+
+	double tolerance = 7.5e-9;
+	//double tolerance = 1.0e-7;
+	int check_freq = 100;
+	bool print = true;
+
+	int m = 5;
+	double dz = 1.0;
+
+	Time::time_point time_var = Time::now();
+
+	// -----------------------------------------------------------------------------
+	// Memory allocations
+	// Will hold the arrays to theta and grad differences for past states
+	double*** s = (double***) malloc(sizeof(double**)*m);
+	double*** y = (double***) malloc(sizeof(double**)*m);
+	for (int i = 0; i < m; i++) {
+		s[i] = (double**) malloc(sizeof(double*)*pfc->nc);
+		y[i] = (double**) malloc(sizeof(double*)*pfc->nc);
+		for (int c = 0; c < pfc->nc; c++) {
+			s[i][c] = (double*) malloc(sizeof(double)*pfc->local_nx*pfc->ny);
+			y[i][c] = (double*) malloc(sizeof(double)*pfc->local_nx*pfc->ny);
+		}
+	}
+
+	// Direction of the LBFGS step will be saved here
+	// Previous step theta and grad are saved here
+	double** lbfgs_dir = (double**) malloc(sizeof(double*)*pfc->nc);
+	double** prev_grad = (double**) malloc(sizeof(double*)*pfc->nc);
+	for (int c = 0; c < pfc->nc; c++) {
+		lbfgs_dir[c] = (double*) malloc(sizeof(double)*pfc->local_nx*pfc->ny);
+		prev_grad[c] = (double*) malloc(sizeof(double)*pfc->local_nx*pfc->ny);
+	}
+	// -----------------------------------------------------------------------------
+	// Initial gradient
+	pfc->calculate_grad_theta(pfc->eta, pfc->eta_k);
+
+	for (int c = 0; c < pfc->nc; c++)
+		std::memcpy(prev_grad[c], pfc->grad_theta[c], sizeof(double)*pfc->local_nx*pfc->ny);
+	// -----------------------------------------------------------------------------
+
+	int m_c = 0; // current changed value; goes up to m-1
+	int m_q = 0; // queue length (s, y); goes up to m
+
+	int max_it = 10000;
+	int it = 0;
+	for (; it < max_it; it++) {
+
+		lbfgs_direction(m_q, s, y, prev_grad, lbfgs_dir);
+
+		// Move queues if they're "full"
+		if (m_q == m) {
+			move_queue(m, s);
+			move_queue(m, y);
+		}
+
+		// take step and update s
+		for (int c = 0; c < pfc->nc; c++)
+			for (int i = 0; i < pfc->local_nx; i++)
+				for (int j = 0; j < pfc->ny; j++) {
+					double dtheta = - dz*lbfgs_dir[c][i*pfc->ny+j];
+					pfc->eta[c][i*pfc->ny+j] *= std::exp(complex<double>(0.0, 1.0)*dtheta);
+					s[m_c][c][i*pfc->ny+j] = dtheta;
+				}
+		// update eta_k, calculate new gradient and update y
+		pfc->take_fft(pfc->eta_plan_f);
+		pfc->calculate_grad_theta(pfc->eta, pfc->eta_k);
+		for (int c = 0; c < pfc->nc; c++)
+			for (int i = 0; i < pfc->local_nx; i++)
+				for (int j = 0; j < pfc->ny; j++) {
+					y[m_c][c][i*pfc->ny+j] = pfc->grad_theta[c][i*pfc->ny+j]-prev_grad[c][i*pfc->ny+j];
+				}
+
+		for (int c = 0; c < pfc->nc; c++)
+			std::memcpy(prev_grad[c], pfc->grad_theta[c], sizeof(double)*pfc->local_nx*pfc->ny);
+
+		if (m_c < m-1) m_c++;
+		if (m_q < m) m_q++;
+
+		double error = elementwise_avg_norm();
+		if (it % check_freq == 0 || error < tolerance) {
+			double energy = pfc->calculate_energy(pfc->eta, pfc->eta_k);
+			double dur = std::chrono::duration<double>(Time::now()-time_var).count();
+			time_var = Time::now();
+			if (pfc->mpi_rank == 0 && print) {
+				printf("it: %5d; energy: %.14e; err: %.14e; time: %.1f\n",
+						it, energy, error, dur);
+			}
+			if (error < tolerance)
+				break;
+		}
+	}
+
+	// -------------------------------------------------------------------
+	// Free memory
+	for (int i = 0; i < m; i++) {
+		for (int c = 0; c < pfc->nc; c++) {
+			free(s[i][c]);
+			free(y[i][c]);
+		}
+		free(s[i]);
+		free(y[i]);
+	}
+	free(s);
+	free(y);
+	for (int c = 0; c < pfc->nc; c++) {
+		free(lbfgs_dir[c]);
+		free(prev_grad[c]);
+	}
+	free(lbfgs_dir);
+	free(prev_grad);
+	// -------------------------------------------------------------------
+
+	return it;
+}
+
+
+
+int MechanicalEquilibrium::lbfgs_iterations = 500;
+
+int MechanicalEquilibrium::lbfgs_enhanced() {
+
+	//double tolerance = 7.5e-9;
+	double tolerance = 1.0e-8;
+	int check_freq = 100;
+	bool print = true;
+
+	int m = 5;
+	double dz = 1.0;
+
+	int accelerated_descent_iterations = 400;
+	int lbfgs_it_increase = 500;
+
+	Time::time_point time_var = Time::now();
+
+	// -----------------------------------------------------------------------------
+	// Memory allocations
+	// Will hold the arrays to theta and grad differences for past states
+	double*** s = (double***) malloc(sizeof(double**)*m);
+	double*** y = (double***) malloc(sizeof(double**)*m);
+	for (int i = 0; i < m; i++) {
+		s[i] = (double**) malloc(sizeof(double*)*pfc->nc);
+		y[i] = (double**) malloc(sizeof(double*)*pfc->nc);
+		for (int c = 0; c < pfc->nc; c++) {
+			s[i][c] = (double*) malloc(sizeof(double)*pfc->local_nx*pfc->ny);
+			y[i][c] = (double*) malloc(sizeof(double)*pfc->local_nx*pfc->ny);
+		}
+	}
+
+	// Direction of the LBFGS step will be saved here
+	// Previous step theta and grad are saved here
+	double** lbfgs_dir = (double**) malloc(sizeof(double*)*pfc->nc);
+	double** prev_grad = (double**) malloc(sizeof(double*)*pfc->nc);
+	for (int c = 0; c < pfc->nc; c++) {
+		lbfgs_dir[c] = (double*) malloc(sizeof(double)*pfc->local_nx*pfc->ny);
+		prev_grad[c] = (double*) malloc(sizeof(double)*pfc->local_nx*pfc->ny);
+	}
+	// -----------------------------------------------------------------------------
+
+	int total_lbfgs_iterations = 0;
+	double error = 1.0;
+
+	int rep = 0;
+	for (; rep < 100; rep++) {
+
+		// -----------------------------------------------------------------------------------
+		// 1) Line search
+		// Update gradient and calc energy
+		pfc->calculate_grad_theta(pfc->eta, pfc->eta_k);
+		double last_energy = pfc->calculate_energy(pfc->eta, pfc->eta_k);
+
+		// Do the exponential line search to find optimal step
+		// will update eta, eta_k and also store new energy value
+		double dz_ls = exp_line_search(&last_energy, pfc->grad_theta);
+
+		if (pfc->mpi_rank == 0 && print) printf("    Line search step: %.2f\n", dz_ls);
+		// -----------------------------------------------------------------------------------
+		// 2) LBFGS steps
+
+		// update and store gradient to prev_grad
+		pfc->calculate_grad_theta(pfc->eta, pfc->eta_k);
+		for (int c = 0; c < pfc->nc; c++)
+			std::memcpy(prev_grad[c], pfc->grad_theta[c], sizeof(double)*pfc->local_nx*pfc->ny);
+
+		int m_c = 0; // current changed value; goes up to m-1
+		int m_q = 0; // queue length (s, y); goes up to m
+
+		double current_lbfgs_iterations = 0;
+		if (rep == 0) current_lbfgs_iterations = lbfgs_iterations;
+		else current_lbfgs_iterations = lbfgs_it_increase;
+
+		for (int it = 1; it < current_lbfgs_iterations + 1; it++) {
+			lbfgs_direction(m_q, s, y, prev_grad, lbfgs_dir);
+
+			// Move queues if they're "full"
+			if (m_q == m) {
+				move_queue(m, s);
+				move_queue(m, y);
+			}
+
+			// take step and update s
+			for (int c = 0; c < pfc->nc; c++)
+				for (int i = 0; i < pfc->local_nx; i++)
+					for (int j = 0; j < pfc->ny; j++) {
+						double dtheta = - dz*lbfgs_dir[c][i*pfc->ny+j];
+						pfc->eta[c][i*pfc->ny+j] *= std::exp(complex<double>(0.0, 1.0)*dtheta);
+						s[m_c][c][i*pfc->ny+j] = dtheta;
+					}
+			// update eta_k, calculate new gradient and update y
+			pfc->take_fft(pfc->eta_plan_f);
+			pfc->calculate_grad_theta(pfc->eta, pfc->eta_k);
+			for (int c = 0; c < pfc->nc; c++)
+				for (int i = 0; i < pfc->local_nx; i++)
+					for (int j = 0; j < pfc->ny; j++) {
+						y[m_c][c][i*pfc->ny+j] = pfc->grad_theta[c][i*pfc->ny+j]-prev_grad[c][i*pfc->ny+j];
+					}
+
+			for (int c = 0; c < pfc->nc; c++)
+				std::memcpy(prev_grad[c], pfc->grad_theta[c], sizeof(double)*pfc->local_nx*pfc->ny);
+
+			if (m_c < m-1) m_c++;
+			if (m_q < m) m_q++;
+
+			total_lbfgs_iterations++;
+
+			error = elementwise_avg_norm();
+			if (it % check_freq == 0 || error < tolerance) {
+				double energy = pfc->calculate_energy(pfc->eta, pfc->eta_k);
+				double dur = std::chrono::duration<double>(Time::now()-time_var).count();
+				time_var = Time::now();
+				if (pfc->mpi_rank == 0 && print) {
+					printf("    it: %5d; energy: %.14e; err: %.14e; time: %.1f\n",
+							it, energy, error, dur);
+				}
+				if (pfc->mpi_rank == 0 && energy > last_energy)
+					printf("    Warning: energy increased during LBFGS steps!\n");
+				last_energy = energy;
+				if (error < tolerance) break;
+			}
+		}
+		if (error < tolerance) break;
+		// -----------------------------------------------------------------------------------
+		// 3) Error reducing accelerated descent
+		if (pfc->mpi_rank == 0 && print) printf("    Error reduction:\n");
+		accelerated_gradient_descent(dz, accelerated_descent_iterations, tolerance, print);
+
+		pfc->calculate_grad_theta(pfc->eta, pfc->eta_k);
+		error = elementwise_avg_norm();
+		if (error < tolerance) break;
+	}
+
+	lbfgs_iterations = total_lbfgs_iterations;
+
+	// -------------------------------------------------------------------
+	// Free memory
+	for (int i = 0; i < m; i++) {
+		for (int c = 0; c < pfc->nc; c++) {
+			free(s[i][c]);
+			free(y[i][c]);
+		}
+		free(s[i]);
+		free(y[i]);
+	}
+	free(s);
+	free(y);
+	for (int c = 0; c < pfc->nc; c++) {
+		free(lbfgs_dir[c]);
+		free(prev_grad[c]);
+	}
+	free(lbfgs_dir);
+	free(prev_grad);
+	// -------------------------------------------------------------------
+
+	return rep;
+}
 
 

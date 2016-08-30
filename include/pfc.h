@@ -64,6 +64,7 @@ public:
 
     void initialize_eta_circle();
     void initialize_eta_seed();
+    void initialize_eta_multiple_seeds();
     void take_fft(fftw_plan *plan);
     void normalize_field(complex<double> **field);
 
@@ -86,7 +87,7 @@ public:
 
 
     void start_calculations();
-    void run_calculations(int init_it, double time_so_far, int total_ffts, string path,
+    void run_calculations(int init_it, double time_so_far, string path,
             string run_info_filename);
     void continue_calculations();
 

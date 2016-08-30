@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <complex>
+#include <deque>
 
 using namespace std;
 
@@ -25,13 +26,28 @@ class MechanicalEquilibrium {
     void update_velocity_and_take_step(double dz, double gamma,
         double **velocity, bool zero_vel); 
 
+    double dot_prod(double **v1, double **v2);
+    void lbfgs_direction(int m, double ***s, double ***y, double **grad, double **result);
+    void move_queue(int m, double ***queue);
+    bool check_move(int m, double ***q_bef, double ***q_aft);
+
+    /** the number of lbfgs iterations before error reducing A-GD iterations*/
+    static int lbfgs_iterations;
+
 public:
     MechanicalEquilibrium(PhaseField *pfc);
 
     int steepest_descent_fixed_dz();
     int steepest_descent_adaptive_dz();
-    int accelerated_steepest_descent();
-    int accelerated_steepest_descent_adaptive_dz();
+    int accelerated_gradient_descent(
+    		double dz = 1.0,
+    		int max_iter = 10000,
+    		double tolerance = 7.5e-9,
+    		bool print = true);
+    int accelerated_gradient_descent_line_search();
+
+    int lbfgs();
+    int lbfgs_enhanced();
 
 };
 
