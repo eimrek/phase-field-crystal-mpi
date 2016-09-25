@@ -41,7 +41,7 @@ obj/%.o: src/%.cpp
 	$(CXX) $(APP_CXXFLAGS) -c $< -o $@
 
 run:
-	$(MPI_LOC)/bin/mpirun -n 1 $(APP)
+	$(MPI_LOC)/bin/mpirun -n 2 $(APP)
 
 #################
 # OTHER TARGETS #

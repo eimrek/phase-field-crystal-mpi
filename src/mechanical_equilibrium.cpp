@@ -196,7 +196,7 @@ double MechanicalEquilibrium::exp_line_search(double *energy_io, double **neg_di
     return dz;
 }
 
-int MechanicalEquilibrium::steepest_descent_adaptive_dz() {
+int MechanicalEquilibrium::steepest_descent_line_search() {
     int max_iter = 10000;
     double tolerance = 7.5e-9;
 

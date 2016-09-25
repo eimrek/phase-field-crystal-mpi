@@ -18,8 +18,8 @@
 //
 // initialization could also be done in header, if const->constexpr 
 
-const int PhaseField::nx = 384;
-const int PhaseField::ny = 384;
+const int PhaseField::nx = 1024;
+const int PhaseField::ny = 1024;
 
 const double PhaseField::dx = 2.0;
 const double PhaseField::dy = 2.0;
@@ -198,11 +198,18 @@ void PhaseField::initialize_eta_multiple_seeds() {
     		std::make_tuple(0.86, 0.66, 0.06, -0.20),
 			std::make_tuple(0.59, 0.21, 0.03, -0.10),
 			std::make_tuple(0.33, 0.80, 0.06,  0.00),
-			std::make_tuple(0.38, 0.41, 0.06,  0.10),
+			std::make_tuple(0.38, 0.41, 0.06,  0.05),
 			std::make_tuple(0.51, 0.17, 0.03,  0.20),
-			std::make_tuple(0.16, 0.19, 0.03,  0.15),
+			std::make_tuple(0.16, 0.19, 0.03,  0.10),
 			std::make_tuple(0.99, 0.99, 0.12,  0.15)
     };
+
+    /*
+    std::vector<std::tuple<double, double, double, double>> seeds = {
+			std::make_tuple(0.3, 0.5, 0.15, 0.0),
+			std::make_tuple(0.7, 0.5, 0.15, 0.2),
+    };
+    */
 
     for (int i = 0; i < local_nx; i++) {
         int i_gl = i + local_nx_start;
@@ -240,7 +247,7 @@ void PhaseField::initialize_eta_multiple_seeds() {
             		double theta = q_vec[c][0]*((cos(ang)-1)*x_dif - sin(ang)*y_dif)
 								   + q_vec[c][1]*(sin(ang)*x_dif + (cos(ang)-1)*y_dif);
 
-                    eta[c][i*ny + j] += amplitude/(rd*rd*rd*rd+1)
+                    eta[c][i*ny + j] += amplitude/(std::pow(rd, 16)+1)
                     					* exp(complex<double>(0.0, 1.0)*theta);
             	}
             }
@@ -532,7 +539,7 @@ void PhaseField::write_eta_to_file(string filepath) {
     if (rcode != MPI_SUCCESS)
         cerr << "Error: couldn't open file" << endl;
     for (int c = 0; c < nc; c++) {
-        MPI_Offset offset = mpi_rank*local_nx*ny*sizeof(double)*2 + c*nx*ny*sizeof(double)*2;
+        MPI_Offset offset = local_nx_start*ny*sizeof(double)*2 + c*nx*ny*sizeof(double)*2;
         rcode = MPI_File_set_view(mpi_file, offset,
                                     MPI_DOUBLE, MPI_DOUBLE, "native", MPI_INFO_NULL);
     
@@ -562,7 +569,7 @@ void PhaseField::read_eta_from_file(string filepath) {
         cerr << "Error: couldn't open file" << endl;
 
     for (int c = 0; c < nc; c++) {
-        MPI_Offset offset = mpi_rank*local_nx*ny*sizeof(double)*2 + c*nx*ny*sizeof(double)*2;
+        MPI_Offset offset = local_nx_start*ny*sizeof(double)*2 + c*nx*ny*sizeof(double)*2;
         rcode = MPI_File_set_view(mpi_file, offset,
                                     MPI_DOUBLE, MPI_DOUBLE, "native", MPI_INFO_NULL);
     
@@ -634,6 +641,9 @@ void PhaseField::start_calculations() {
     initialize_eta_multiple_seeds();
     take_fft(eta_plan_f);
 
+    // write initial conf to file
+	write_eta_to_file(path+"initial_conf.bin");
+
     double energy = calculate_energy(eta, eta_k);
     if (mpi_rank == 0)
         printf("Initial state - energy: %.16e\n", energy);
@@ -652,7 +662,7 @@ void PhaseField::run_calculations(int init_it, double time_so_far,
     int repetitions = 1500;
     int od_steps = 80;
 
-    int save_freq = 50;
+    int save_freq = 2;
     FILE * run_info_file;
 
     int ts = init_it; // total over-damped timesteps counter
@@ -666,7 +676,8 @@ void PhaseField::run_calculations(int init_it, double time_so_far,
         ts += od_steps;
         double od_dur = std::chrono::duration<double>(Time::now()-time_var).count();
         // Mechanical equilibration
-        int meq_iter = mech_eq.lbfgs_enhanced();
+        //int meq_iter = mech_eq.lbfgs_enhanced();
+        int meq_iter = 0;
         double meq_dur = std::chrono::duration<double>(Time::now()-time_var).count()
                            - od_dur;
         double energy = calculate_energy(eta, eta_k);
@@ -745,23 +756,25 @@ void PhaseField::continue_calculations() {
 
 
 void PhaseField::test() {
-
-    //read_eta_from_file("./output/testrun/eta_1260.bin");
-
+/*
 	initialize_eta_multiple_seeds();
 	take_fft(eta_plan_f);
-	write_eta_to_file("./output/seed_run/initial_conf.bin");
-
+	write_eta_to_file("./output/initial_conf.bin");
+	
     for (int it = 0; it < 80; it++) {
         overdamped_time_step();
     }
 
     double energy = calculate_energy(eta, eta_k);
 	if (mpi_rank == 0)
-		printf("Initial state - energy: %.16e\n", energy);
+		printf("energy before mech. eq.: %.16e\n", energy);
 
     mech_eq.lbfgs_enhanced();
-
+    
+    energy = calculate_energy(eta, eta_k);
+	if (mpi_rank == 0)
+		printf("energy after mech. eq.: %.16e\n", energy);
+*/
 }
 
 

@@ -38,7 +38,7 @@ public:
     MechanicalEquilibrium(PhaseField *pfc);
 
     int steepest_descent_fixed_dz();
-    int steepest_descent_adaptive_dz();
+    int steepest_descent_line_search();
     int accelerated_gradient_descent(
     		double dz = 1.0,
     		int max_iter = 10000,
