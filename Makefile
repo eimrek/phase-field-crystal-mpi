@@ -1,10 +1,10 @@
 
 # Library locations
-MPI_LOC = /opt/openmpi
-FFTW_LOC = /opt/fftw-3.3.4
+#MPI_LOC = /opt/openmpi
+FFTW_LOC = /storage/software/fftw-3.3.4
 
 # The compiler
-CXX = $(MPI_LOC)/bin/mpic++
+CXX = mpic++
 
 # Compiler parameters
 # -Wall		shows all warnings when compiling
@@ -41,7 +41,7 @@ obj/%.o: src/%.cpp
 	$(CXX) $(APP_CXXFLAGS) -c $< -o $@
 
 run:
-	$(MPI_LOC)/bin/mpirun -n 2 $(APP)
+	mpirun -n 2 $(APP)
 
 #################
 # OTHER TARGETS #

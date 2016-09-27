@@ -625,12 +625,13 @@ int MechanicalEquilibrium::lbfgs_iterations = 500;
 int MechanicalEquilibrium::lbfgs_enhanced() {
 
 	//double tolerance = 7.5e-9;
-	double tolerance = 1.0e-8;
+	double tolerance = 5.0e-8;
 	int check_freq = 100;
 	bool print = true;
 
 	int m = 5;
-	double dz = 1.0;
+	//double dz = 1.0; // for dx=2.0
+	double dz = 0.02; // for dx=0.5
 
 	int accelerated_descent_iterations = 400;
 	int lbfgs_it_increase = 500;

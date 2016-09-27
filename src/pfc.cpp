@@ -18,11 +18,11 @@
 //
 // initialization could also be done in header, if const->constexpr 
 
-const int PhaseField::nx = 1024;
-const int PhaseField::ny = 1024;
+const int PhaseField::nx = 2048;
+const int PhaseField::ny = 2048;
 
-const double PhaseField::dx = 2.0;
-const double PhaseField::dy = 2.0;
+const double PhaseField::dx = 0.5;
+const double PhaseField::dy = 0.5;
 const double PhaseField::dt = 0.125;
 
 const double PhaseField::q_vec[][2] = 
@@ -659,15 +659,15 @@ void PhaseField::run_calculations(int init_it, double time_so_far,
     Time::time_point time_var = Time::now();
 
     // Start repetitions of overdamped steps and mechanical equilibrium
-    int repetitions = 1500;
+    int repetitions = 50000;
     int od_steps = 80;
 
-    int save_freq = 2;
+    int save_freq = 5;
     FILE * run_info_file;
 
     int ts = init_it; // total over-damped timesteps counter
 
-    for (int rep = 0; rep < repetitions; rep++) {
+    for (int rep = 1; rep < repetitions; rep++) {
         time_var = Time::now();
         // Over-damped timesteps
         for (int ts_ = 0; ts_ < od_steps; ts_++) {
@@ -676,8 +676,8 @@ void PhaseField::run_calculations(int init_it, double time_so_far,
         ts += od_steps;
         double od_dur = std::chrono::duration<double>(Time::now()-time_var).count();
         // Mechanical equilibration
-        //int meq_iter = mech_eq.lbfgs_enhanced();
-        int meq_iter = 0;
+        int meq_iter = mech_eq.lbfgs_enhanced();
+        //int meq_iter = 0;
         double meq_dur = std::chrono::duration<double>(Time::now()-time_var).count()
                            - od_dur;
         double energy = calculate_energy(eta, eta_k);
@@ -696,6 +696,9 @@ void PhaseField::run_calculations(int init_it, double time_so_far,
                     meq_iter, meq_dur, total_dur);
             fclose(run_info_file);
         }
+	if ((rep-1)*od_steps*dt > 700 && save_freq < 20) {
+	    save_freq = 100;
+	}
         if (rep % save_freq == 0) {
             std::stringstream sstream;
             sstream << std::fixed << std::setprecision(0) << ts*dt;
