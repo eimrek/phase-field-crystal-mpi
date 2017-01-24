@@ -13,8 +13,8 @@ void run_calculations(int mpi_rank, int mpi_size) {
 
     PhaseField pfc(mpi_rank, mpi_size);
 
-    pfc.start_calculations();
-    //pfc.test();
+    //pfc.start_calculations();
+    pfc.test();
 
 }
 

@@ -21,8 +21,8 @@
 const int PhaseField::nx = 2048;
 const int PhaseField::ny = 2048;
 
-const double PhaseField::dx = 0.5;
-const double PhaseField::dy = 0.5;
+const double PhaseField::dx = 0.25;
+const double PhaseField::dy = 0.25;
 const double PhaseField::dt = 0.125;
 
 const double PhaseField::q_vec[][2] = 
@@ -194,6 +194,7 @@ void PhaseField::initialize_eta_multiple_seeds() {
     double amplitude = 0.10867304595992146;
 
     // <rel_x, rel_y, size, angle>
+    /*
     std::vector<std::tuple<double, double, double, double>> seeds = {
     		std::make_tuple(0.86, 0.66, 0.06, -0.20),
 			std::make_tuple(0.59, 0.21, 0.03, -0.10),
@@ -203,13 +204,14 @@ void PhaseField::initialize_eta_multiple_seeds() {
 			std::make_tuple(0.16, 0.19, 0.03,  0.10),
 			std::make_tuple(0.99, 0.99, 0.12,  0.15)
     };
+    */
 
-    /*
+
     std::vector<std::tuple<double, double, double, double>> seeds = {
 			std::make_tuple(0.3, 0.5, 0.15, 0.0),
 			std::make_tuple(0.7, 0.5, 0.15, 0.2),
     };
-    */
+
 
     for (int i = 0; i < local_nx; i++) {
         int i_gl = i + local_nx_start;
@@ -759,6 +761,23 @@ void PhaseField::continue_calculations() {
 
 
 void PhaseField::test() {
+	initialize_eta_multiple_seeds();
+	take_fft(eta_plan_f);
+	write_eta_to_file("./output/initial_conf.bin");
+
+    for (int it = 0; it < 400; it++) {
+        overdamped_time_step();
+    }
+
+	write_eta_to_file("./output/eta50.bin");
+
+	for (int it = 0; it < 400; it++) {
+		overdamped_time_step();
+	}
+
+	write_eta_to_file("./output/eta100.bin");
+
+
 /*
 	initialize_eta_multiple_seeds();
 	take_fft(eta_plan_f);

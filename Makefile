@@ -1,7 +1,7 @@
 
 # Library locations
-#MPI_LOC = /opt/openmpi
-FFTW_LOC = /storage/software/fftw-3.3.4
+MPI_LOC = /opt/openmpi
+FFTW_LOC = /opt/fftw-3.3.5
 
 # The compiler
 CXX = mpic++
@@ -41,7 +41,7 @@ obj/%.o: src/%.cpp
 	$(CXX) $(APP_CXXFLAGS) -c $< -o $@
 
 run:
-	mpirun -n 2 $(APP)
+	$(MPI_LOC)/bin/mpirun -n 4 $(APP)
 
 #################
 # OTHER TARGETS #
