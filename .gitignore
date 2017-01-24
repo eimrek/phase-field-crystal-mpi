@@ -5,3 +5,5 @@ testfile
 .cproject
 .settings/*
 
+*/.ipynb_checkpoints/*
+

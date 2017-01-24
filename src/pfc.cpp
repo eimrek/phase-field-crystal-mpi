@@ -18,8 +18,8 @@
 //
 // initialization could also be done in header, if const->constexpr 
 
-const int PhaseField::nx = 2048;
-const int PhaseField::ny = 2048;
+const int PhaseField::nx = 512;
+const int PhaseField::ny = 512;
 
 const double PhaseField::dx = 0.25;
 const double PhaseField::dy = 0.25;
@@ -39,8 +39,8 @@ const int PhaseField::nc = 3;
 
 // ---------------------------------------------------------------
 
-PhaseField::PhaseField(int mpi_rank, int mpi_size)
-        : mpi_rank(mpi_rank), mpi_size(mpi_size), mech_eq(this) {
+PhaseField::PhaseField(int mpi_rank_, int mpi_size_, std::string output_path_)
+        : mpi_rank(mpi_rank_), mpi_size(mpi_size_), output_path(output_path_), mech_eq(this) {
 
     fftw_mpi_init();
    
@@ -626,7 +626,7 @@ double PhaseField::calculate_radius() {
  */
 void PhaseField::start_calculations() {
 
-    string path = "./output/seed_run/";
+    string path = output_path + "seed_run/";
     string run_info_filename = "run_info.txt";
 
     // check if program can find the path
@@ -712,7 +712,7 @@ void PhaseField::run_calculations(int init_it, double time_so_far,
 
 void PhaseField::continue_calculations() {
 
-    string path = "./output/testrun/";
+    string path = output_path + "testrun/";
     string run_info_filename = "run_info.txt";
 
     string continue_from_file = "eta_10.bin";
@@ -763,25 +763,25 @@ void PhaseField::continue_calculations() {
 void PhaseField::test() {
 	initialize_eta_multiple_seeds();
 	take_fft(eta_plan_f);
-	write_eta_to_file("./output/initial_conf.bin");
+	write_eta_to_file(output_path + "initial_conf.bin");
 
     for (int it = 0; it < 400; it++) {
         overdamped_time_step();
     }
 
-	write_eta_to_file("./output/eta50.bin");
+	write_eta_to_file(output_path + "eta50.bin");
 
 	for (int it = 0; it < 400; it++) {
 		overdamped_time_step();
 	}
 
-	write_eta_to_file("./output/eta100.bin");
+	write_eta_to_file(output_path + "eta100.bin");
 
 
 /*
 	initialize_eta_multiple_seeds();
 	take_fft(eta_plan_f);
-	write_eta_to_file("./output/initial_conf.bin");
+	write_eta_to_file(output_path + "initial_conf.bin");
 	
     for (int it = 0; it < 80; it++) {
         overdamped_time_step();

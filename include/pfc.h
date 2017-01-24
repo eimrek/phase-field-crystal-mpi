@@ -56,9 +56,12 @@ private:
 
     double **grad_theta;
 
+    std::string output_path;
+
     MechanicalEquilibrium mech_eq;
 
     double calculate_radius();
+
 
 public:
 
@@ -79,7 +82,7 @@ public:
             complex<double> **eta_);
     void overdamped_time_step();
 
-    PhaseField(int mpi_rank, int mpi_size);
+    PhaseField(int mpi_rank_, int mpi_size_, std::string output_path_);
     ~PhaseField();
     
     void write_eta_to_file(string filepath);
