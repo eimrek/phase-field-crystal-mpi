@@ -1,0 +1,7 @@
+.idea/*
+data/*
+backups/*
+__pycache__/*
+*.pyc
+fig/*
+
