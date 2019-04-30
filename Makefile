@@ -1,10 +1,7 @@
-
-# Library locations
-MPI_LOC = /opt/openmpi
-FFTW_LOC = /opt/fftw-3.3.4
+# GNU Makefile
 
 # The compiler
-CXX = $(MPI_LOC)/bin/mpic++
+CXX = mpic++
 
 # Compiler parameters
 # -Wall		shows all warnings when compiling
@@ -13,7 +10,7 @@ CXX = $(MPI_LOC)/bin/mpic++
 CXXFLAGS = -Wall -std=c++11 -O3
 
 # Linker parameters
-LFLAGS = -L$(FFTW_LOC)/lib -lfftw3_mpi -lfftw3 -lm -L$(MPI_LOC)/lib -lmpi
+LFLAGS = -lfftw3_mpi -lfftw3 -lm -lmpi
 
 # Paths
 BIN_PATH = bin
@@ -24,7 +21,7 @@ OUTPUT_PATH = output
 APP = $(BIN_PATH)/pfc
 
 # Application compilation settings
-APP_CXXFLAGS = $(CXXFLAGS) -Iinclude -I$(FFTW_LOC)/include -I$(MPI_LOC)/include
+APP_CXXFLAGS = $(CXXFLAGS) -Iinclude
 
 # Object files
 OBJS = obj/main.o obj/pfc.o obj/mechanical_equilibrium.o
@@ -63,4 +60,3 @@ clean:
 	rm -rf $(BIN_PATH)
 	rm -rf $(OUTPUT_PATH)
 	rm -rf docs/html
-
