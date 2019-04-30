@@ -10,6 +10,8 @@ The program is a finite-difference based implementation of the PFC model. It
 also enables to perform elastic equilibration during the PFC time evolution. The
 L-BFGS algorithm is implemented to perform the elastic equilibration.
 
+For more details, see the [project report](https://drive.google.com/file/d/1eDGmD9PXif09STVQw0Y3AcxmkMtJQfWx).
+
 ## Example results
 
 The following videos show time evolution of the PFC model for two systems. First
